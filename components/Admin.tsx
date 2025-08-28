@@ -260,6 +260,40 @@ const Admin: React.FC = () => {
     XLSX.writeFile(workbook, "relatorio_pedidos.xlsx");
   }, [orders]);
 
+  const exportToTxt = useCallback(() => {
+    const fileContent = orders.map(order => {
+        const itemsText = order.items.map(i => `- ${i.quantity}x ${i.name.toUpperCase()} (${formatCurrency(i.price * i.quantity)})`).join('\n');
+        
+        const customerStatusText = order.customerStatus === 'registered' ? 'Realizado' : 'Pendente';
+        const orderStatusText = order.status === 'completed' ? 'Concluída' : 'Aberto';
+        const observationText = order.observation || 'Nenhuma';
+        const orderDate = new Date(order.date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+        return `*Pedido de: ${order.customer.name}*
+*CPF:* ${order.customer.cpf}
+*Data:* ${orderDate}
+
+*Itens do Pedido:*
+${itemsText}
+
+*Total:* ${formatCurrency(order.totalPrice)}
+*Status Cadastro:* ${customerStatusText}
+*Status Venda:* ${orderStatusText}
+*Observação:* ${observationText}
+---------------------------------------`;
+    }).join('\n\n');
+
+    const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'pedidos_whatsapp.txt');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [orders]);
+
   const baseInputClass = "w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-gray-100 text-gray-800 placeholder-gray-500";
   const errorInputClass = "border-red-500 ring-1 ring-red-500";
   const errorTextClass = "text-red-600 text-sm mt-1";
@@ -338,9 +372,10 @@ const Admin: React.FC = () => {
       <div className="mt-12">
         <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
           <h2 className="text-2xl font-bold text-gray-800">Relatório de Pedidos</h2>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 flex-wrap justify-center">
             <button onClick={exportToPDF} className="bg-red-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-red-700 transition-colors text-sm">Exportar PDF</button>
             <button onClick={exportToExcel} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-green-700 transition-colors text-sm">Exportar Excel</button>
+            <button onClick={exportToTxt} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-blue-700 transition-colors text-sm">Exportar TXT (WhatsApp)</button>
           </div>
         </div>
         <div className="bg-white shadow-md rounded-lg overflow-x-auto border border-gray-200">
