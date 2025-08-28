@@ -7,11 +7,18 @@ interface AdminLoginProps {
 const AdminLogin: React.FC<AdminLoginProps> = ({ onAuthSuccess }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const ADMIN_PASSWORD = 'STQV@Taimin'; // Senha para acesso
+  // A senha agora é lida de uma variável de ambiente segura
+  const adminPassword = (import.meta as any).env.VITE_ADMIN_PASSWORD;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === ADMIN_PASSWORD) {
+
+    if (!adminPassword) {
+      setError('O login do administrador não está configurado corretamente. (A variável de ambiente VITE_ADMIN_PASSWORD está faltando)');
+      return;
+    }
+
+    if (password === adminPassword) {
       setError('');
       onAuthSuccess();
     } else {
@@ -28,7 +35,6 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onAuthSuccess }) => {
           <p className="mt-2 text-gray-600">
             Esta página é protegida. Por favor, insira a senha para continuar.
           </p>
-          <p className="mt-2 text-sm text-gray-500">Dica: mantra de quarta</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
