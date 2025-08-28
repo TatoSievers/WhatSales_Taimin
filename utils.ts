@@ -1,3 +1,4 @@
+
 import { Order, CartItem, Customer } from './types';
 import { supabase } from './lib/supabaseClient';
 
@@ -48,7 +49,7 @@ export const getOrders = async (): Promise<Order[]> => {
   }
 };
 
-export const addOrder = async (items: CartItem[], customer: Customer, totalPrice: number): Promise<boolean> => {
+export const addOrder = async (items: CartItem[], customer: Customer, totalPrice: number): Promise<{ customerStatus: 'pending' | 'registered' }> => {
   try {
     // Verifica se o cliente já existe baseado no CPF
     const { data: existingOrders, error: fetchError } = await supabase
@@ -61,7 +62,7 @@ export const addOrder = async (items: CartItem[], customer: Customer, totalPrice
       console.error("Erro ao verificar cliente existente:", fetchError);
     }
     
-    const isNewCustomer = !existingOrders || existingOrders.length === 0;
+    const customerStatus = (!existingOrders || existingOrders.length === 0) ? 'pending' : 'registered';
 
     const newOrder = {
       // id é gerado automaticamente pelo Supabase (UUID)
@@ -71,7 +72,7 @@ export const addOrder = async (items: CartItem[], customer: Customer, totalPrice
       totalPrice,
       status: 'open',
       observation: '',
-      isNewCustomer,
+      customerStatus,
     };
 
     const { error: insertError } = await supabase.from('orders').insert(newOrder);
@@ -81,21 +82,21 @@ export const addOrder = async (items: CartItem[], customer: Customer, totalPrice
       throw insertError;
     }
 
-    return isNewCustomer;
+    return { customerStatus };
   } catch (error) {
     console.error("Falha ao salvar pedido no Supabase", error);
-    return true; // Assume que é um novo cliente em caso de erro para garantir a mensagem correta
+    return { customerStatus: 'pending' }; // Assume pendente em caso de erro
   }
 };
 
 export const updateOrder = async (updatedOrder: Order): Promise<void> => {
   try {
-    // Apenas status e observação são editáveis pelo painel de admin
     const { error } = await supabase
       .from('orders')
       .update({ 
           status: updatedOrder.status, 
-          observation: updatedOrder.observation 
+          observation: updatedOrder.observation,
+          customerStatus: updatedOrder.customerStatus,
       })
       .eq('id', updatedOrder.id);
       
@@ -105,5 +106,22 @@ export const updateOrder = async (updatedOrder: Order): Promise<void> => {
     }
   } catch (error) {
     console.error("Falha ao atualizar pedido no Supabase", error);
+  }
+};
+
+export const deleteOrder = async (orderId: string): Promise<void> => {
+  try {
+    const { error } = await supabase
+      .from('orders')
+      .delete()
+      .eq('id', orderId);
+      
+    if (error) {
+      console.error("Erro ao deletar pedido:", error);
+      throw error;
+    }
+  } catch (error) {
+    console.error("Falha ao deletar pedido no Supabase", error);
+    throw error;
   }
 };

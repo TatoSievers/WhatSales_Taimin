@@ -18,6 +18,7 @@ const ProductList: React.FC = () => {
 
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
+      if (product.visibility === 'hidden') return false;
       const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
       const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
       return matchesCategory && matchesSearch;

@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useProducts } from '../context/ProductContext';
 import { Product, NewProduct, Order } from '../types';
 import EditIcon from './icons/EditIcon';
 import TrashIcon from './icons/TrashIcon';
-import SaveIcon from './icons/SaveIcon';
-import { formatCurrency, getOrders, updateOrder } from '../utils';
+import { formatCurrency, getOrders, updateOrder, deleteOrder } from '../utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -18,16 +18,22 @@ const initialFormState: NewProduct = {
   quantityInfo: '',
   action: '',
   indication: '',
-  isOutOfStock: false,
+  visibility: 'in_stock',
 };
 
 const Admin: React.FC = () => {
-  const { products, addProduct, updateProduct, deleteProduct, loading } = useProducts();
+  const { products, addProduct, updateProduct, deleteProduct: deleteProductFromContext, loading } = useProducts();
   const [isEditing, setIsEditing] = useState<Product | null>(null);
   const [formData, setFormData] = useState<NewProduct>(initialFormState);
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
   const [successMessage, setSuccessMessage] = useState('');
   const [orders, setOrders] = useState<Order[]>([]);
+
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const observationUpdateTimers = useRef<{ [key: string]: number }>({});
   
   const fetchOrders = useCallback(async () => {
     const ordersFromDb = await getOrders();
@@ -36,6 +42,10 @@ const Admin: React.FC = () => {
 
   useEffect(() => {
     fetchOrders();
+    // Clear all timers when the component unmounts
+    return () => {
+        Object.values(observationUpdateTimers.current).forEach(clearTimeout);
+    };
   }, [fetchOrders]);
 
   useEffect(() => {
@@ -55,7 +65,7 @@ const Admin: React.FC = () => {
         quantityInfo: isEditing.quantityInfo || '',
         action: isEditing.action || '',
         indication: isEditing.indication || '',
-        isOutOfStock: isEditing.isOutOfStock || false,
+        visibility: isEditing.visibility || 'in_stock',
       });
       setFormErrors({});
       window.scrollTo(0, 0);
@@ -83,13 +93,12 @@ const Admin: React.FC = () => {
     return Object.keys(errors).length === 0;
   }, [formData]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
-    const checked = (e.target as HTMLInputElement).checked;
-
+    
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : (name === 'price' ? parseFloat(value) || 0 : value)
+      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : (name === 'price' ? parseFloat(value) || 0 : value)
     }));
     
     if (formErrors[name]) {
@@ -121,9 +130,9 @@ const Admin: React.FC = () => {
     resetForm();
   };
   
-  const handleDelete = async (id: number) => {
+  const handleDeleteProduct = async (id: number) => {
     if (window.confirm('Tem certeza que deseja excluir este produto?')) {
-        await deleteProduct(id);
+        await deleteProductFromContext(id);
         setSuccessMessage('Produto excluído com sucesso!');
         if (isEditing && isEditing.id === id) {
           resetForm();
@@ -131,22 +140,65 @@ const Admin: React.FC = () => {
     }
   };
 
-  const handleOrderChange = useCallback((orderId: string, field: 'status' | 'observation', value: any) => {
+  const handleOrderUpdate = useCallback(async (orderId: string, updatedFields: Partial<Order>) => {
+    const orderToSave = orders.find(o => o.id === orderId);
+    if(orderToSave){
+        const updatedOrder = {...orderToSave, ...updatedFields};
+        await updateOrder(updatedOrder);
+        setSuccessMessage(`Pedido de ${updatedOrder.customer.name} atualizado.`);
+        // Re-fetch to ensure data consistency, or update local state carefully
+        fetchOrders();
+    }
+  }, [orders, fetchOrders]);
+  
+  const handleObservationChange = (orderId: string, value: string) => {
     setOrders(currentOrders => 
         currentOrders.map(o => 
-            o.id === orderId ? { ...o, [field]: value } : o
+            o.id === orderId ? { ...o, observation: value } : o
         )
     );
-  }, []);
-
-  const handleSaveOrder = useCallback(async (orderId: string) => {
-    const orderToSave = orders.find(o => o.id === orderId);
-    if (orderToSave) {
-        await updateOrder(orderToSave);
-        setSuccessMessage(`Pedido de ${orderToSave.customer.name} salvo com sucesso!`);
+    if (observationUpdateTimers.current[orderId]) {
+        clearTimeout(observationUpdateTimers.current[orderId]);
     }
-  }, [orders]);
+    observationUpdateTimers.current[orderId] = window.setTimeout(() => {
+        handleOrderUpdate(orderId, { observation: value });
+    }, 700);
+  };
+
+  const handleVisibilityChange = async (productId: number, newVisibility: Product['visibility']) => {
+    const productToUpdate = products.find(p => p.id === productId);
+    if (productToUpdate) {
+        await updateProduct({ ...productToUpdate, visibility: newVisibility });
+        setSuccessMessage(`Visibilidade de '${productToUpdate.name}' atualizada.`);
+    }
+  };
   
+  const openDeleteModal = (order: Order) => {
+    setOrderToDelete(order);
+    setIsDeleteModalOpen(true);
+    setDeletePassword('');
+    setDeleteError('');
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!orderToDelete) return;
+    const adminPassword = (import.meta as any).env.VITE_ADMIN_PASSWORD;
+
+    if (deletePassword !== adminPassword) {
+        setDeleteError('Senha incorreta.');
+        return;
+    }
+    try {
+        await deleteOrder(orderToDelete.id);
+        setOrders(prev => prev.filter(o => o.id !== orderToDelete.id));
+        setSuccessMessage('Pedido excluído com sucesso!');
+        setIsDeleteModalOpen(false);
+        setOrderToDelete(null);
+    } catch (error) {
+        setDeleteError('Falha ao excluir o pedido.');
+    }
+  };
+
   const exportToPDF = useCallback(() => {
     const doc = new jsPDF();
     const tableColumn = ["Data", "Cliente", "CPF", "Cadastro", "Produtos", "Status", "Observação", "Valor Total"];
@@ -157,9 +209,9 @@ const Admin: React.FC = () => {
             new Date(order.date).toLocaleString('pt-BR'),
             order.customer.name,
             order.customer.cpf,
-            order.isNewCustomer ? 'Sem Cadastro' : 'Já Cadastrado',
+            order.customerStatus === 'registered' ? 'Realizado' : 'Pendente',
             order.items.map(i => `${i.name} (${i.quantity}x)`).join('; '),
-            order.status === 'completed' ? 'Venda OK' : 'Em Aberto',
+            order.status === 'completed' ? 'Concluída' : 'Em Aberto',
             order.observation,
             formatCurrency(order.totalPrice)
         ];
@@ -181,10 +233,10 @@ const Admin: React.FC = () => {
         'Cliente': order.customer.name,
         'CPF': order.customer.cpf,
         'Email': order.customer.email,
-        'Status Cadastro': order.isNewCustomer ? 'Sem Cadastro' : 'Já Cadastrado',
+        'Status Cadastro': order.customerStatus === 'registered' ? 'Realizado' : 'Pendente',
         'Produtos': order.items.map(i => `${i.name} (${i.quantity}x - ${formatCurrency(i.price*i.quantity)})`).join('; '),
         'Valor Total': order.totalPrice,
-        'Status': order.status === 'completed' ? 'Venda OK' : 'Em Aberto',
+        'Status': order.status === 'completed' ? 'Concluída' : 'Em Aberto',
         'Observação': order.observation,
     }));
 
@@ -261,18 +313,13 @@ const Admin: React.FC = () => {
                 <label htmlFor="indication" className="block text-sm font-medium text-gray-700 mb-1">Indicação</label>
                 <textarea name="indication" id="indication" value={formData.indication || ''} onChange={handleInputChange} rows={3} className={`${baseInputClass} border-gray-300`}></textarea>
             </div>
-            <div className="md:col-span-2 flex items-center pt-2">
-                <input
-                    type="checkbox"
-                    name="isOutOfStock"
-                    id="isOutOfStock"
-                    checked={formData.isOutOfStock || false}
-                    onChange={handleInputChange}
-                    className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
-                />
-                <label htmlFor="isOutOfStock" className="ml-2 block text-sm font-medium text-gray-700">
-                    Marcar produto como esgotado
-                </label>
+            <div className="md:col-span-2">
+              <label htmlFor="visibility" className="block text-sm font-medium text-gray-700 mb-1">Visibilidade na Loja</label>
+              <select name="visibility" id="visibility" value={formData.visibility} onChange={handleInputChange} className={`${baseInputClass} border-gray-300`}>
+                <option value="in_stock">Em Estoque (Visível)</option>
+                <option value="out_of_stock">Esgotado (Visível com aviso)</option>
+                <option value="hidden">Não Exibir (Oculto da loja)</option>
+              </select>
             </div>
           </div>
           <div className="flex items-center space-x-4 pt-2">
@@ -305,7 +352,7 @@ const Admin: React.FC = () => {
                         <th scope="col" className="px-4 py-3">CPF</th>
                         <th scope="col" className="px-4 py-3">Produtos</th>
                         <th scope="col" className="px-4 py-3 text-right">Valor Total</th>
-                        <th scope="col" className="px-4 py-3 text-center">Cadastro</th>
+                        <th scope="col" className="px-4 py-3 text-center">Status Cadastro</th>
                         <th scope="col" className="px-4 py-3 text-center">Status Venda</th>
                         <th scope="col" className="px-4 py-3">Observação</th>
                         <th scope="col" className="px-4 py-3 text-center">Ações</th>
@@ -332,21 +379,14 @@ const Admin: React.FC = () => {
                                         {formatCurrency(order.totalPrice)}
                                     </td>
                                     <td className="px-4 py-4 text-center">
-                                      {typeof order.isNewCustomer === 'boolean' ? (
-                                        order.isNewCustomer ? (
-                                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                                            Sem Cadastro
-                                          </span>
-                                        ) : (
-                                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                                            Já Cadastrado
-                                          </span>
-                                        )
-                                      ) : (
-                                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                                            Já Cadastrado
-                                          </span>
-                                      )}
+                                       <select
+                                            value={order.customerStatus}
+                                            onChange={e => handleOrderUpdate(order.id, { customerStatus: e.target.value as Order['customerStatus'] })}
+                                            className="w-full bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-xs focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+                                        >
+                                            <option value="pending">Pendente</option>
+                                            <option value="registered">Realizado</option>
+                                        </select>
                                     </td>
                                     <td className="px-4 py-4 text-center">
                                       <label className="flex items-center justify-center cursor-pointer">
@@ -354,11 +394,11 @@ const Admin: React.FC = () => {
                                           type="checkbox"
                                           className="form-checkbox h-5 w-5 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
                                           checked={order.status === 'completed'}
-                                          onChange={e => handleOrderChange(order.id, 'status', e.target.checked ? 'completed' : 'open')}
-                                          title={order.status === 'completed' ? 'Marcar como Em Aberto' : 'Marcar como Venda OK'}
+                                          onChange={e => handleOrderUpdate(order.id, { status: e.target.checked ? 'completed' : 'open' })}
+                                          title={order.status === 'completed' ? 'Marcar como Em Aberto' : 'Marcar como Concluída'}
                                         />
                                         <span className={`ml-2 text-xs font-semibold ${order.status === 'completed' ? 'text-green-700' : 'text-yellow-700'}`}>
-                                          {order.status === 'completed' ? 'OK' : 'Aberto'}
+                                          {order.status === 'completed' ? 'Concluída' : 'Aberto'}
                                         </span>
                                       </label>
                                     </td>
@@ -366,19 +406,19 @@ const Admin: React.FC = () => {
                                       <input
                                         type="text"
                                         value={order.observation}
-                                        onChange={e => handleOrderChange(order.id, 'observation', e.target.value)}
+                                        onChange={e => handleObservationChange(order.id, e.target.value)}
                                         className="w-full bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-sm focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
                                         placeholder="Adicionar nota..."
                                       />
                                     </td>
                                     <td className="px-4 py-4 text-center">
                                       <button 
-                                        onClick={() => handleSaveOrder(order.id)} 
-                                        className="text-blue-600 hover:text-blue-800 p-1 rounded-full hover:bg-blue-100 transition-colors"
-                                        aria-label={`Salvar alterações para o pedido de ${order.customer.name}`}
-                                        title="Salvar Alterações"
+                                        onClick={() => openDeleteModal(order)}
+                                        className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 transition-colors"
+                                        aria-label={`Excluir pedido de ${order.customer.name}`}
+                                        title="Excluir Pedido"
                                       >
-                                        <SaveIcon />
+                                        <TrashIcon />
                                       </button>
                                     </td>
                                 </tr>
@@ -418,7 +458,7 @@ const Admin: React.FC = () => {
                   <tr>
                     <th scope="col" className="px-6 py-3">Produto</th>
                     <th scope="col" className="px-6 py-3">Categoria</th>
-                    <th scope="col" className="px-6 py-3">Status</th>
+                    <th scope="col" className="px-6 py-3">Visibilidade</th>
                     <th scope="col" className="px-6 py-3">Preço</th>
                     <th scope="col" className="px-6 py-3 text-right">Ações</th>
                   </tr>
@@ -428,7 +468,7 @@ const Admin: React.FC = () => {
                     <tr key={product.id} className="bg-white border-b hover:bg-gray-50">
                       <th scope="row" className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
                         <div className="flex items-center space-x-3">
-                           <img src={product.imageUrl} alt={product.name} className={`w-10 h-10 rounded-md object-contain bg-gray-200 ${product.isOutOfStock ? 'opacity-40' : ''}`} />
+                           <img src={product.imageUrl} alt={product.name} className={`w-10 h-10 rounded-md object-contain bg-gray-200 ${product.visibility === 'out_of_stock' ? 'opacity-40' : ''}`} />
                            <div>
                             <span className="font-semibold">{product.name}</span>
                             {product.quantityInfo && <p className="text-xs text-gray-500">{product.quantityInfo}</p>}
@@ -437,15 +477,15 @@ const Admin: React.FC = () => {
                       </th>
                       <td className="px-6 py-4">{product.category}</td>
                       <td className="px-6 py-4">
-                        {product.isOutOfStock ? (
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                            Esgotado
-                          </span>
-                        ) : (
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                            Em Estoque
-                          </span>
-                        )}
+                        <select
+                          value={product.visibility}
+                          onChange={(e) => handleVisibilityChange(product.id, e.target.value as Product['visibility'])}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-xs focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+                        >
+                            <option value="in_stock">Em Estoque</option>
+                            <option value="out_of_stock">Esgotado</option>
+                            <option value="hidden">Oculto</option>
+                        </select>
                       </td>
                       <td className="px-6 py-4 font-medium">{formatCurrency(product.price)}</td>
                       <td className="px-6 py-4 text-right">
@@ -453,7 +493,7 @@ const Admin: React.FC = () => {
                           <button onClick={() => setIsEditing(product)} className="text-blue-600 hover:text-blue-800 p-1 rounded-full hover:bg-blue-100 transition-colors" aria-label={`Editar ${product.name}`}>
                             <EditIcon />
                           </button>
-                          <button onClick={() => handleDelete(product.id)} className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 transition-colors" aria-label={`Excluir ${product.name}`}>
+                          <button onClick={() => handleDeleteProduct(product.id)} className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 transition-colors" aria-label={`Excluir ${product.name}`}>
                             <TrashIcon />
                           </button>
                         </div>
@@ -466,6 +506,40 @@ const Admin: React.FC = () => {
             </div>
         )}
       </div>
+
+      {isDeleteModalOpen && orderToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-[70] flex items-center justify-center p-4" aria-modal="true" role="dialog">
+          <div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 max-w-md w-full text-left transform transition-all relative">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Confirmar Exclusão</h2>
+            <p className="text-gray-600 mb-4">
+              Tem certeza que deseja excluir permanentemente o pedido de <strong>{orderToDelete.customer.name}</strong>? Esta ação não pode ser desfeita.
+            </p>
+            <div className="space-y-4">
+                <div>
+                    <label htmlFor="deletePassword" className="block text-sm font-medium text-gray-700 mb-1">
+                        Para confirmar, digite a senha de administrador:
+                    </label>
+                    <input
+                        type="password"
+                        id="deletePassword"
+                        value={deletePassword}
+                        onChange={(e) => setDeletePassword(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                    />
+                    {deleteError && <p className="text-red-600 text-sm mt-1">{deleteError}</p>}
+                </div>
+                <div className="flex justify-end gap-4">
+                    <button onClick={() => setIsDeleteModalOpen(false)} className="bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-md hover:bg-gray-300">
+                        Cancelar
+                    </button>
+                    <button onClick={handleConfirmDelete} className="bg-red-600 text-white font-bold py-2 px-4 rounded-md hover:bg-red-700">
+                        Excluir Pedido
+                    </button>
+                </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

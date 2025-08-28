@@ -8,7 +8,7 @@ export interface Product {
   action?: string;
   indication?: string;
   quantityInfo?: string;
-  isOutOfStock?: boolean;
+  visibility: 'in_stock' | 'out_of_stock' | 'hidden';
 }
 
 export type NewProduct = Omit<Product, 'id'>;
@@ -31,7 +31,7 @@ export interface Order {
   totalPrice: number;
   status: 'open' | 'completed';
   observation: string;
-  isNewCustomer?: boolean;
+  customerStatus: 'pending' | 'registered';
 }
 
 export interface ProductContextType {

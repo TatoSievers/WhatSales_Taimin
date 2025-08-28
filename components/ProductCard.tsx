@@ -15,7 +15,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
   const [totalPrice, setTotalPrice] = useState(product.price);
   const dosageForm = getDosageForm(product.name);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const isOutOfStock = product.isOutOfStock || false;
+  const isOutOfStock = product.visibility === 'out_of_stock';
 
   useEffect(() => {
     setTotalPrice(product.price * quantity);

@@ -1,3 +1,4 @@
+
 import React, { createContext, useState, useContext, useMemo, useCallback } from 'react';
 import { Product, CartItem, CartContextType, Customer } from '../types';
 import { WHATSAPP_NUMBER } from '../constants';
@@ -76,8 +77,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const handleFinalCheckout = useCallback(async (customer: Customer) => {
     const totalPriceValue = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-    // Save order to Supabase and check if customer is new
-    const isNewCustomer = await addOrder(cartItems, customer, totalPriceValue);
+    // Save order to Supabase and get the customer's registration status
+    const { customerStatus } = await addOrder(cartItems, customer, totalPriceValue);
     
     const itemsText = cartItems
       .map(
@@ -112,7 +113,7 @@ Equipe Taimin`;
     console.log("----------------------------");
     // --- Fim da Simulação ---
     
-    const closingMessage = isNewCustomer
+    const closingMessage = customerStatus === 'pending'
       ? 'Aguardo as instruções para cadastramento*, pagamento e entrega.\n*venda mediante aprovação de cadastro'
       : 'Cadastro válido, Aguardo as instruções para pagamento e entrega.';
 
