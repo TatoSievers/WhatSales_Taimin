@@ -5,7 +5,7 @@ import ProductCard from './ProductCard';
 import SearchIcon from './icons/SearchIcon';
 
 const ProductList: React.FC = () => {
-  const { products, loading } = useProducts();
+  const { products, loading, error } = useProducts();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
 
@@ -23,6 +23,26 @@ const ProductList: React.FC = () => {
       return matchesCategory && matchesSearch;
     });
   }, [products, searchTerm, selectedCategory]);
+
+  if (error) {
+    return (
+      <div className="flex justify-center items-center py-20">
+        <div className="max-w-2xl w-full bg-red-50 border-l-4 border-red-500 text-red-700 p-6 rounded-md shadow-md" role="alert">
+          <h3 className="text-xl font-bold mb-2">Erro de Conexão</h3>
+          <p className="mb-4">O aplicativo não conseguiu se conectar ao banco de dados para buscar os produtos.</p>
+          <p className="font-semibold">Possível Causa:</p>
+          <p className="mb-4">As chaves de acesso ao Supabase (URL e Chave Pública) podem estar faltando ou incorretas.</p>
+          <p className="font-semibold">Como Resolver:</p>
+          <ol className="list-decimal list-inside space-y-1">
+            <li>Acesse as configurações (Settings) do seu projeto na Vercel.</li>
+            <li>Vá para a seção <strong>Environment Variables</strong>.</li>
+            <li>Verifique se as variáveis <strong>VITE_SUPABASE_URL</strong> e <strong>VITE_SUPABASE_ANON_KEY</strong> existem e se seus valores estão corretos.</li>
+            <li>Se você fez alguma alteração, faça um novo "Redeploy" para que as mudanças tenham efeito.</li>
+          </ol>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

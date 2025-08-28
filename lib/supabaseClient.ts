@@ -1,17 +1,21 @@
 import { createClient } from '@supabase/supabase-js';
 
-// As chaves do Supabase devem ser configuradas como variáveis de ambiente no seu projeto Vercel.
-// Nome da variável: SUPABASE_URL, Valor: [URL do seu projeto Supabase]
-// Nome da variável: SUPABASE_KEY, Valor: [Sua chave anon public do Supabase]
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_KEY;
+// As chaves do Supabase DEVEM ser configuradas como variáveis de ambiente no seu projeto Vercel.
+// IMPORTANTE: Para que fiquem disponíveis no frontend, elas precisam ter o prefixo VITE_
+//
+// Nome da variável: VITE_SUPABASE_URL, Valor: [URL do seu projeto Supabase]
+// Nome da variável: VITE_SUPABASE_ANON_KEY, Valor: [Sua chave 'anon public' do Supabase]
+
+// Em ambientes de desenvolvimento modernos (como o Vite, usado pela Vercel), 
+// as variáveis de ambiente são acessadas via `import.meta.env`.
+// FIX: Cast `import.meta` to `any` to resolve TypeScript error `Property 'env' does not exist on type 'ImportMeta'`.
+const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL;
+const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  // Este erro será visível nos logs do Vercel ou no console do navegador se as variáveis não estiverem configuradas.
-  // O app não conseguirá se conectar ao banco de dados.
-  console.error("Variáveis de ambiente do Supabase (SUPABASE_URL, SUPABASE_KEY) não estão configuradas.");
+  // Em vez de quebrar a aplicação, exibe um erro claro no console do desenvolvedor.
+  // A lógica de tratamento de erro na UI cuidará de informar o usuário.
+  console.error("ERRO CRÍTICO: As variáveis de ambiente do Supabase (VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY) não estão configuradas. O app não pode se conectar ao banco de dados. Verifique a configuração do seu projeto na Vercel.");
 }
 
-// O '!' assume que as variáveis de ambiente existirão no ambiente de produção (Vercel).
-// Em um ambiente de desenvolvimento local, você precisaria de um arquivo .env ou similar.
-export const supabase = createClient(supabaseUrl!, supabaseAnonKey!);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);

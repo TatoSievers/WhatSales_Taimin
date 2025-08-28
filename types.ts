@@ -40,6 +40,7 @@ export interface ProductContextType {
   updateProduct: (product: Product) => void;
   deleteProduct: (productId: number) => void;
   loading: boolean;
+  error: string | null;
 }
 
 export interface CartContextType {

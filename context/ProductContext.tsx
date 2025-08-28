@@ -7,21 +7,30 @@ const ProductContext = createContext<ProductContextType | undefined>(undefined);
 export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .order('name', { ascending: true });
+    setError(null);
+    try {
+      const { data, error: dbError } = await supabase
+        .from('products')
+        .select('*')
+        .order('name', { ascending: true });
+        
+      if (dbError) {
+        throw new Error(dbError.message);
+      }
       
-    if (error) {
-      console.error('Erro ao buscar produtos:', error);
-      setProducts([]);
-    } else {
       setProducts(data || []);
+
+    } catch (err: any) {
+      console.error('Falha detalhada ao buscar produtos:', err);
+      setError('Não foi possível carregar os produtos. Verifique sua conexão e a configuração do banco de dados.');
+      setProducts([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -79,8 +88,9 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
     addProduct,
     updateProduct,
     deleteProduct,
-    loading
-  }), [products, addProduct, updateProduct, deleteProduct, loading]);
+    loading,
+    error,
+  }), [products, addProduct, updateProduct, deleteProduct, loading, error]);
 
   return <ProductContext.Provider value={value}>{children}</ProductContext.Provider>;
 };
