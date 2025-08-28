@@ -1,0 +1,64 @@
+
+export interface Product {
+  id: number;
+  name: string;
+  price: number;
+  imageUrl: string;
+  category: string;
+  action?: string;
+  indication?: string;
+  quantityInfo?: string;
+  isOutOfStock?: boolean;
+}
+
+export type NewProduct = Omit<Product, 'id'>;
+
+export interface CartItem extends Product {
+  quantity: number;
+}
+
+export interface Customer {
+  name: string;
+  email: string;
+  cpf: string;
+}
+
+export interface Order {
+  id: string;
+  date: string;
+  customer: Customer;
+  items: CartItem[];
+  totalPrice: number;
+  status: 'open' | 'completed';
+  observation: string;
+  isNewCustomer?: boolean;
+}
+
+export interface ProductContextType {
+  products: Product[];
+  addProduct: (product: NewProduct) => void;
+  updateProduct: (product: Product) => void;
+  deleteProduct: (productId: number) => void;
+  loading: boolean;
+}
+
+export interface CartContextType {
+  cartItems: CartItem[];
+  addToCart: (product: Product, quantity: number) => void;
+  removeFromCart: (productId: number) => void;
+  updateQuantity: (productId: number, quantity: number) => void;
+  clearCart: () => void;
+  totalItems: number;
+  totalPrice: number;
+  isCartOpen: boolean;
+  toggleCart: () => void;
+  // Post-checkout flow
+  showPostCheckoutModal: boolean;
+  openPostCheckoutModal: () => void;
+  closePostCheckoutModal: () => void;
+  // Email modal flow
+  isEmailModalOpen: boolean;
+  openEmailModal: () => void;
+  closeEmailModal: () => void;
+  handleFinalCheckout: (customer: Customer) => void;
+}
