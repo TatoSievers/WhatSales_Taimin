@@ -1,4 +1,5 @@
 import { Order, CartItem, Customer } from './types';
+import { supabase } from './lib/supabaseClient';
 
 export const formatCurrency = (value: number): string => {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -24,48 +25,85 @@ export const getDosageForm = (productName: string): string | null => {
   return null;
 };
 
-export const getOrders = (): Order[] => {
+export const getOrders = async (): Promise<Order[]> => {
   try {
-      const storedOrders = localStorage.getItem('orders');
-      return storedOrders ? JSON.parse(storedOrders) : [];
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*')
+      .order('date', { ascending: false });
+
+    if (error) {
+      console.error("Erro ao buscar pedidos:", error);
+      throw error;
+    }
+    // A tipagem do Supabase pode não ser perfeita, então garantimos que os campos corretos existam.
+    return (data || []).map(order => ({
+      ...order,
+      items: order.items || [],
+      customer: order.customer || { name: '', email: '', cpf: '' },
+    })) as Order[];
   } catch (error) {
-      console.error("Failed to load orders from local storage", error);
-      return [];
+    console.error("Falha ao carregar pedidos do Supabase", error);
+    return [];
   }
 };
 
-export const addOrder = (items: CartItem[], customer: Customer, totalPrice: number): boolean => {
+export const addOrder = async (items: CartItem[], customer: Customer, totalPrice: number): Promise<boolean> => {
   try {
-      const orders = getOrders();
-      const isExistingCustomer = orders.some(order => order.customer.cpf === customer.cpf);
+    // Verifica se o cliente já existe baseado no CPF
+    const { data: existingOrders, error: fetchError } = await supabase
+      .from('orders')
+      .select('id')
+      .eq('customer->>cpf', customer.cpf) // Query em coluna JSONB
+      .limit(1);
 
-      const newOrder: Order = {
-          id: Date.now().toString(),
-          date: new Date().toISOString(),
-          customer,
-          items,
-          totalPrice,
-          status: 'open',
-          observation: '',
-          isNewCustomer: !isExistingCustomer,
-      };
-      const updatedOrders = [...orders, newOrder];
-      localStorage.setItem('orders', JSON.stringify(updatedOrders));
-      return !isExistingCustomer; // Return true if it's a new customer
+    if (fetchError) {
+      console.error("Erro ao verificar cliente existente:", fetchError);
+    }
+    
+    const isNewCustomer = !existingOrders || existingOrders.length === 0;
+
+    const newOrder = {
+      // id é gerado automaticamente pelo Supabase (UUID)
+      date: new Date().toISOString(),
+      customer,
+      items,
+      totalPrice,
+      status: 'open',
+      observation: '',
+      isNewCustomer,
+    };
+
+    const { error: insertError } = await supabase.from('orders').insert(newOrder);
+    
+    if (insertError) {
+      console.error("Erro ao salvar pedido no Supabase:", insertError);
+      throw insertError;
+    }
+
+    return isNewCustomer;
   } catch (error) {
-      console.error("Failed to save order to local storage", error);
-      return true; // Default to new customer message on error to be safe
+    console.error("Falha ao salvar pedido no Supabase", error);
+    return true; // Assume que é um novo cliente em caso de erro para garantir a mensagem correta
   }
 };
 
-export const updateOrder = (updatedOrder: Order): void => {
+export const updateOrder = async (updatedOrder: Order): Promise<void> => {
   try {
-      const orders = getOrders();
-      const updatedOrders = orders.map(order => 
-          order.id === updatedOrder.id ? updatedOrder : order
-      );
-      localStorage.setItem('orders', JSON.stringify(updatedOrders));
+    // Apenas status e observação são editáveis pelo painel de admin
+    const { error } = await supabase
+      .from('orders')
+      .update({ 
+          status: updatedOrder.status, 
+          observation: updatedOrder.observation 
+      })
+      .eq('id', updatedOrder.id);
+      
+    if (error) {
+      console.error("Erro ao atualizar pedido:", error);
+      throw error;
+    }
   } catch (error) {
-      console.error("Failed to update order in local storage", error);
+    console.error("Falha ao atualizar pedido no Supabase", error);
   }
 };

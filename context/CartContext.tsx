@@ -73,11 +73,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsEmailModalOpen(false);
   }, []);
 
-  const handleFinalCheckout = useCallback((customer: Customer) => {
+  const handleFinalCheckout = useCallback(async (customer: Customer) => {
     const totalPriceValue = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-    // Save order to local storage and check if customer is new
-    const isNewCustomer = addOrder(cartItems, customer, totalPriceValue);
+    // Save order to Supabase and check if customer is new
+    const isNewCustomer = await addOrder(cartItems, customer, totalPriceValue);
     
     const itemsText = cartItems
       .map(

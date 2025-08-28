@@ -1,36 +1,77 @@
-
-import React, { createContext, useState, useContext, useMemo, useCallback } from 'react';
+import React, { createContext, useState, useContext, useMemo, useCallback, useEffect } from 'react';
 import { Product, ProductContextType, NewProduct } from '../types';
-import { mockProducts } from '../data/products';
+import { supabase } from '../lib/supabaseClient';
 
 const ProductContext = createContext<ProductContextType | undefined>(undefined);
 
 export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [products, setProducts] = useState<Product[]>(mockProducts);
-  const [loading, setLoading] = useState(false); // Data is loaded synchronously now.
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const addProduct = useCallback((productData: NewProduct) => {
-    setProducts(prevProducts => {
-      const newProduct: Product = {
-        id: Date.now(), // Simple ID generation for in-session changes
-        ...productData,
-      };
-      return [...prevProducts, newProduct];
-    });
+  const fetchProducts = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .order('name', { ascending: true });
+      
+    if (error) {
+      console.error('Erro ao buscar produtos:', error);
+      setProducts([]);
+    } else {
+      setProducts(data || []);
+    }
+    setLoading(false);
   }, []);
 
-  const updateProduct = useCallback((updatedProduct: Product) => {
-    setProducts(prevProducts => 
-      prevProducts.map(p =>
-        p.id === updatedProduct.id ? updatedProduct : p
-      )
-    );
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
+  const addProduct = useCallback(async (productData: NewProduct) => {
+    const { data, error } = await supabase
+      .from('products')
+      .insert(productData)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao adicionar produto:', error);
+    } else if (data) {
+      setProducts(prevProducts => [...prevProducts, data]);
+    }
   }, []);
 
-  const deleteProduct = useCallback((productId: number) => {
-    setProducts(prevProducts => 
-      prevProducts.filter(p => p.id !== productId)
-    );
+  const updateProduct = useCallback(async (updatedProduct: Product) => {
+    const { data, error } = await supabase
+      .from('products')
+      .update(updatedProduct)
+      .eq('id', updatedProduct.id)
+      .select()
+      .single();
+      
+    if (error) {
+      console.error('Erro ao atualizar produto:', error);
+    } else if (data) {
+      setProducts(prevProducts =>
+        prevProducts.map(p => (p.id === data.id ? data : p))
+      );
+    }
+  }, []);
+
+  const deleteProduct = useCallback(async (productId: number) => {
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', productId);
+
+    if (error) {
+      console.error('Erro ao deletar produto:', error);
+    } else {
+      setProducts(prevProducts =>
+        prevProducts.filter(p => p.id !== productId)
+      );
+    }
   }, []);
 
   const value = useMemo(() => ({
