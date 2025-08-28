@@ -10,9 +10,6 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [error, setError] = useState<string | null>(null);
 
   const fetchProducts = useCallback(async () => {
-    // Não seta loading para true em re-fetches para evitar piscar a tela
-    // Apenas na carga inicial.
-    // setLoading(true); 
     setError(null);
     try {
       const { data, error: dbError } = await supabase
@@ -31,39 +28,45 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setError('Não foi possível carregar os produtos. Verifique sua conexão e a configuração do banco de dados.');
       setProducts([]);
     } finally {
-      setLoading(false); // Garante que o loading termine
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    setLoading(true); // Seta o loading apenas na montagem inicial
+    setLoading(true);
     fetchProducts();
   }, [fetchProducts]);
 
   const addProduct = useCallback(async (productData: NewProduct) => {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('products')
-      .insert(productData);
+      .insert(productData)
+      .select()
+      .single();
 
     if (error) {
       console.error('Erro ao adicionar produto:', error);
-    } else {
-      await fetchProducts(); // **CORREÇÃO: Recarrega a lista de produtos**
+      setError('Falha ao adicionar produto.');
+    } else if (data) {
+      setProducts(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
     }
-  }, [fetchProducts]);
+  }, []);
 
-  const updateProduct = useCallback(async (updatedProduct: Product) => {
+  const updateProduct = useCallback(async (productId: number, updates: Partial<Omit<Product, 'id'>>) => {
     const { error } = await supabase
       .from('products')
-      .update(updatedProduct)
-      .eq('id', updatedProduct.id);
+      .update(updates)
+      .eq('id', productId);
       
     if (error) {
       console.error('Erro ao atualizar produto:', error);
+      setError('Falha ao atualizar produto.');
     } else {
-      await fetchProducts(); // **CORREÇÃO: Recarrega a lista de produtos**
+      setProducts(prev =>
+        prev.map(p => (p.id === productId ? { ...p, ...updates } : p))
+      );
     }
-  }, [fetchProducts]);
+  }, []);
 
   const deleteProduct = useCallback(async (productId: number) => {
     const { error } = await supabase
@@ -73,10 +76,11 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     if (error) {
       console.error('Erro ao deletar produto:', error);
+      setError('Falha ao excluir produto.');
     } else {
-      await fetchProducts(); // **CORREÇÃO: Recarrega a lista de produtos**
+      setProducts(prev => prev.filter(p => p.id !== productId));
     }
-  }, [fetchProducts]);
+  }, []);
 
   const value = useMemo(() => ({
     products,

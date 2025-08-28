@@ -36,9 +36,9 @@ export interface Order {
 
 export interface ProductContextType {
   products: Product[];
-  addProduct: (product: NewProduct) => void;
-  updateProduct: (product: Product) => void;
-  deleteProduct: (productId: number) => void;
+  addProduct: (product: NewProduct) => Promise<void>;
+  updateProduct: (productId: number, updates: Partial<Omit<Product, 'id'>>) => Promise<void>;
+  deleteProduct: (productId: number) => Promise<void>;
   loading: boolean;
   error: string | null;
 }
