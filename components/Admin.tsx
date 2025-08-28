@@ -8,8 +8,6 @@ import { formatCurrency, getOrders, updateOrder } from '../utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { supabase } from '../lib/supabaseClient';
-import { mockProducts } from '../data/products';
 
 
 const initialFormState: NewProduct = {
@@ -31,10 +29,6 @@ const Admin: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState('');
   const [orders, setOrders] = useState<Order[]>([]);
   
-  const [isSeeding, setIsSeeding] = useState(false);
-  const [seedMessage, setSeedMessage] = useState({ type: '', text: '' });
-
-
   const fetchOrders = useCallback(async () => {
     const ordersFromDb = await getOrders();
     setOrders(ordersFromDb);
@@ -70,32 +64,6 @@ const Admin: React.FC = () => {
     }
   }, [isEditing]);
   
-  const handleSeedDatabase = async () => {
-    const confirmation = window.confirm(
-      "Você tem certeza? Esta ação irá inserir todos os produtos do arquivo local na sua tabela 'products' do Supabase. Use isso apenas uma vez para a configuração inicial."
-    );
-
-    if (!confirmation) return;
-
-    setIsSeeding(true);
-    setSeedMessage({ type: 'info', text: 'Inserindo produtos...' });
-
-    // Remove o ID local para que o Supabase possa gerar um novo
-    const productsToInsert = mockProducts.map(({ id, ...rest }) => rest);
-
-    const { error } = await supabase.from('products').insert(productsToInsert);
-
-    if (error) {
-      setSeedMessage({ type: 'error', text: `Erro ao inserir produtos: ${error.message}. Verifique se a tabela 'products' foi criada corretamente.` });
-    } else {
-      setSeedMessage({ type: 'success', text: 'Produtos inseridos com sucesso! A lista de produtos será atualizada.' });
-      // Recarregar produtos para mostrar os novos dados
-      // A atualização do context já deve fazer isso, mas podemos forçar se necessário.
-    }
-    setIsSeeding(false);
-  };
-
-
   const validateForm = useCallback((): boolean => {
     const errors: { [key: string]: string } = {};
     if (!formData.name.trim()) errors.name = "Nome do produto é obrigatório.";
@@ -244,31 +212,6 @@ const Admin: React.FC = () => {
   const errorInputClass = "border-red-500 ring-1 ring-red-500";
   const errorTextClass = "text-red-600 text-sm mt-1";
   
-  const productsTableSql = `CREATE TABLE products (
-  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-  name TEXT NOT NULL,
-  price NUMERIC NOT NULL,
-  "imageUrl" TEXT NOT NULL,
-  category TEXT NOT NULL,
-  action TEXT,
-  indication TEXT,
-  "quantityInfo" TEXT,
-  "isOutOfStock" BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);`;
-
- const ordersTableSql = `CREATE TABLE orders (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  date TIMESTAMPTZ DEFAULT NOW(),
-  customer JSONB NOT NULL,
-  items JSONB NOT NULL,
-  "totalPrice" NUMERIC NOT NULL,
-  status TEXT NOT NULL,
-  observation TEXT,
-  "isNewCustomer" BOOLEAN,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);`;
-
   return (
     <div className="space-y-8">
       <div>
@@ -281,40 +224,6 @@ const Admin: React.FC = () => {
           <p className="font-bold">{successMessage}</p>
         </div>
       )}
-
-      {/* Database Setup Section */}
-      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-6 rounded-lg shadow-md">
-          <h2 className="text-2xl font-bold text-yellow-800 mb-4">Configuração do Banco de Dados (Supabase)</h2>
-          <div className="space-y-4 text-yellow-900">
-              <p>Para o app funcionar corretamente, você precisa criar as tabelas no seu banco de dados Supabase. Siga os passos:</p>
-              <ol className="list-decimal list-inside space-y-2">
-                  <li>Acesse seu projeto no <a href="https://supabase.com/" target="_blank" rel="noopener noreferrer" className="font-semibold underline hover:text-yellow-700">Supabase</a>.</li>
-                  <li>No menu à esquerda, vá para <strong>SQL Editor</strong> e clique em <strong>New query</strong>.</li>
-                  <li>Copie o código abaixo para criar a tabela de <strong>produtos</strong>, e clique em <strong>RUN</strong>.
-                      <pre className="mt-2 p-3 bg-gray-800 text-white rounded-md text-sm overflow-x-auto"><code>{productsTableSql}</code></pre>
-                  </li>
-                  <li>Crie uma nova query, copie o código para criar a tabela de <strong>pedidos</strong>, e clique em <strong>RUN</strong>.
-                      <pre className="mt-2 p-3 bg-gray-800 text-white rounded-md text-sm overflow-x-auto"><code>{ordersTableSql}</code></pre>
-                  </li>
-                  <li>Após criar a tabela de produtos, clique no botão abaixo para preenchê-la com os dados iniciais.</li>
-              </ol>
-              <div className="pt-4">
-                  <button 
-                      onClick={handleSeedDatabase}
-                      disabled={isSeeding}
-                      className="bg-primary-700 text-white font-bold py-2 px-6 rounded-md hover:bg-primary-800 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  >
-                      {isSeeding ? 'Populando...' : 'Popular Tabela de Produtos com Dados Iniciais'}
-                  </button>
-                  {seedMessage.text && (
-                      <p className={`mt-2 text-sm font-medium ${seedMessage.type === 'success' ? 'text-green-700' : seedMessage.type === 'error' ? 'text-red-700' : 'text-gray-700'}`}>
-                          {seedMessage.text}
-                      </p>
-                  )}
-              </div>
-          </div>
-      </div>
-
 
       <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
         <h2 className="text-2xl font-bold text-gray-800 mb-4">{isEditing ? 'Editar Produto' : 'Adicionar Novo Produto'}</h2>
