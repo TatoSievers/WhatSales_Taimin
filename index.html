@@ -61,6 +61,21 @@
       overflow: hidden;
     }
   }
+  .duplicate-watermark::after {
+    content: 'DUPLICADO';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-30deg);
+    font-size: 3.5rem;
+    font-weight: 800;
+    color: rgba(239, 68, 68, 0.1);
+    pointer-events: none;
+    z-index: 0;
+    white-space: nowrap;
+    text-align: center;
+    width: 100%;
+  }
 </style>
 </head>
   <body class="bg-gray-50">

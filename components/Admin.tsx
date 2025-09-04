@@ -23,6 +23,7 @@ import {
   Legend,
 } from 'chart.js';
 import 'chartjs-adapter-date-fns';
+// FIX: The version of date-fns in this project appears to require submodule imports for functions and locales.
 import { ptBR } from 'date-fns/locale';
 import { parseISO, startOfDay, endOfDay } from 'date-fns';
 
@@ -446,7 +447,7 @@ const Admin: React.FC = () => {
         updateOrder(updatedOrder);
       });
     }
-  }, [duplicateOrderIds]);
+  }, [duplicateOrderIds, orders, updateOrder]);
 
 
   const filteredOrders = useMemo(() => {
@@ -472,20 +473,24 @@ const Admin: React.FC = () => {
   const exportToPDF = useCallback(() => {
     const doc = new jsPDF();
     doc.text("Relatório de Pedidos - Taimin", 14, 16);
-    
-    const tableColumn = ["Data", "Cliente", "CPF", "Itens", "Total", "Status Venda"];
+
+    const tableColumn = ["Data", "Cliente", "CPF", "Produto", "Qtd", "Preço Unit.", "Subtotal", "Status Venda"];
     const tableRows: any[][] = [];
 
     filteredOrders.forEach(order => {
-        const orderData = [
-            new Date(order.date).toLocaleDateString('pt-BR'),
-            order.customer.name,
-            order.customer.cpf,
-            order.items.map(i => `${i.quantity}x ${i.name}`).join('\n'),
-            formatCurrency(order.totalPrice),
-            order.status === 'completed' ? 'Concluída' : 'Aberto'
-        ];
-        tableRows.push(orderData);
+        order.items.forEach(item => {
+            const rowData = [
+                new Date(order.date).toLocaleDateString('pt-BR'),
+                order.customer.name,
+                order.customer.cpf,
+                item.name,
+                item.quantity,
+                formatCurrency(item.price),
+                formatCurrency(item.price * item.quantity),
+                order.status === 'completed' ? 'Concluída' : 'Aberto'
+            ];
+            tableRows.push(rowData);
+        });
     });
 
     autoTable(doc, {
@@ -681,7 +686,7 @@ ${itemsText}
                             const isDuplicate = duplicateOrderIds.has(order.id);
                         
                             return (
-                                <tr key={order.id} className={`border-b ${isDuplicate ? 'bg-yellow-100 hover:bg-yellow-200' : 'bg-white hover:bg-gray-50'}`}>
+                                <tr key={order.id} className={`border-b ${isDuplicate ? 'bg-yellow-100 hover:bg-yellow-200 relative duplicate-watermark' : 'bg-white hover:bg-gray-50'}`}>
                                     <td className="px-4 py-4 whitespace-nowrap">
                                         {new Date(order.date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                     </td>
