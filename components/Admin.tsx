@@ -233,6 +233,13 @@ const Admin: React.FC = () => {
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [productFilterCategory, setProductFilterCategory] = useState('all');
   const [productFilterVisibility, setProductFilterVisibility] = useState('all');
+  
+  // Order Filters State
+  const [orderSearchTerm, setOrderSearchTerm] = useState('');
+  const [orderFilterStatus, setOrderFilterStatus] = useState<'all' | 'open' | 'completed'>('all');
+  const [orderFilterCustomerStatus, setOrderFilterCustomerStatus] = useState<'all' | 'pending' | 'registered'>('all');
+  const [orderStartDate, setOrderStartDate] = useState('');
+  const [orderEndDate, setOrderEndDate] = useState('');
 
   // Order Deletion Modal State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -286,7 +293,11 @@ const Admin: React.FC = () => {
         visibility: isEditing.visibility || 'in_stock',
       });
       setFormErrors({});
-      window.scrollTo(0, 0);
+      // Find the form and scroll to it
+      const formElement = document.getElementById('product-form');
+      if (formElement) {
+        formElement.scrollIntoView({ behavior: 'smooth' });
+      }
     } else {
       setFormData(initialFormState);
     }
@@ -408,6 +419,30 @@ const Admin: React.FC = () => {
     }
   };
 
+  const baseInputClass = "w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-gray-100 text-gray-800 placeholder-gray-500";
+  const errorInputClass = "border-red-500 ring-1 ring-red-500";
+  const errorTextClass = "text-red-600 text-sm mt-1";
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter(order => {
+        const searchTermLower = orderSearchTerm.toLowerCase();
+        const matchesSearch = orderSearchTerm === '' ||
+            order.customer.name.toLowerCase().includes(searchTermLower) ||
+            order.customer.cpf.replace(/\D/g, '').includes(searchTermLower.replace(/\D/g, '')) ||
+            order.customer.email.toLowerCase().includes(searchTermLower);
+
+        const matchesStatus = orderFilterStatus === 'all' || order.status === orderFilterStatus;
+
+        const matchesCustomerStatus = orderFilterCustomerStatus === 'all' || order.customerStatus === orderFilterCustomerStatus;
+
+        const orderDate = parseISO(order.date);
+        const matchesStartDate = !orderStartDate || orderDate >= startOfDay(parseISO(orderStartDate));
+        const matchesEndDate = !orderEndDate || orderDate <= endOfDay(parseISO(orderEndDate));
+        
+        return matchesSearch && matchesStatus && matchesCustomerStatus && matchesStartDate && matchesEndDate;
+    });
+  }, [orders, orderSearchTerm, orderFilterStatus, orderFilterCustomerStatus, orderStartDate, orderEndDate]);
+  
   const exportToPDF = useCallback(() => {
     const doc = new jsPDF();
     doc.text("Relatório de Pedidos - Taimin", 14, 16);
@@ -415,7 +450,7 @@ const Admin: React.FC = () => {
     const tableColumn = ["Data", "Cliente", "CPF", "Itens", "Total", "Status Venda"];
     const tableRows: any[][] = [];
 
-    orders.forEach(order => {
+    filteredOrders.forEach(order => {
         const orderData = [
             new Date(order.date).toLocaleDateString('pt-BR'),
             order.customer.name,
@@ -436,10 +471,10 @@ const Admin: React.FC = () => {
     });
 
     doc.save('relatorio_pedidos_taimin.pdf');
-  }, [orders]);
+  }, [filteredOrders]);
 
   const exportToExcel = useCallback(() => {
-    const flattenedData = orders.flatMap(order => 
+    const flattenedData = filteredOrders.flatMap(order => 
         order.items.map(item => ({
             'ID Pedido': order.id,
             'Data': new Date(order.date).toLocaleString('pt-BR'),
@@ -460,7 +495,7 @@ const Admin: React.FC = () => {
     );
 
     if (flattenedData.length === 0) {
-        alert("Não há dados de pedidos para exportar.");
+        alert("Não há dados de pedidos para exportar com os filtros atuais.");
         return;
     }
 
@@ -478,10 +513,10 @@ const Admin: React.FC = () => {
     worksheet['!cols'] = colWidths;
 
     XLSX.writeFile(workbook, 'relatorio_pedidos_taimin.xlsx');
-  }, [orders]);
+  }, [filteredOrders]);
 
   const openTxtExportModal = useCallback(() => {
-    const fileContent = orders.map(order => {
+    const fileContent = filteredOrders.map(order => {
         const itemsText = order.items.map(i => `- ${i.quantity}x ${i.name.toUpperCase()} (${formatCurrency(i.price * i.quantity)})`).join('\n');
         const customerStatusText = order.customerStatus === 'registered' ? 'Realizado' : 'Pendente';
         const orderStatusText = order.status === 'completed' ? 'Concluída' : 'Aberto';
@@ -504,7 +539,7 @@ ${itemsText}
     
     setTxtExportContent(fileContent);
     setIsTxtExportModalOpen(true);
-  }, [orders]);
+  }, [filteredOrders]);
 
   const handleCopyTxt = useCallback(() => {
     if (txtExportContent) {
@@ -524,11 +559,6 @@ ${itemsText}
     });
   }, [products, productSearchTerm, productFilterCategory, productFilterVisibility]);
 
-
-  const baseInputClass = "w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-gray-100 text-gray-800 placeholder-gray-500";
-  const errorInputClass = "border-red-500 ring-1 ring-red-500";
-  const errorTextClass = "text-red-600 text-sm mt-1";
-  
   return (
     <div className="space-y-8">
       <div>
@@ -544,65 +574,6 @@ ${itemsText}
 
       <Dashboard orders={orders} products={products} />
 
-      {/* Product Form */}
-      <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">{isEditing ? 'Editar Produto' : 'Adicionar Novo Produto'}</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Nome do Produto</label>
-              <input type="text" name="name" id="name" value={formData.name} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.name ? errorInputClass : 'border-gray-300'}`} />
-              {formErrors.name && <p className={errorTextClass}>{formErrors.name}</p>}
-            </div>
-            <div>
-              <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
-              <input type="text" name="category" id="category" value={formData.category} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.category ? errorInputClass : 'border-gray-300'}`} />
-              {formErrors.category && <p className={errorTextClass}>{formErrors.category}</p>}
-            </div>
-            <div>
-              <label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-1">Preço (R$)</label>
-              <input type="number" name="price" id="price" value={formData.price} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.price ? errorInputClass : 'border-gray-300'}`} step="0.01" min="0" />
-              {formErrors.price && <p className={errorTextClass}>{formErrors.price}</p>}
-            </div>
-             <div>
-              <label htmlFor="quantityInfo" className="block text-sm font-medium text-gray-700 mb-1">Informação de Quantidade</label>
-              <input type="text" name="quantityInfo" id="quantityInfo" value={formData.quantityInfo || ''} onChange={handleInputChange} className={`${baseInputClass} border-gray-300`} placeholder="Ex: 180 cápsulas" />
-            </div>
-            <div className="md:col-span-2">
-              <label htmlFor="imageUrl" className="block text-sm font-medium text-gray-700 mb-1">URL da Imagem</label>
-              <input type="url" name="imageUrl" id="imageUrl" value={formData.imageUrl} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.imageUrl ? errorInputClass : 'border-gray-300'}`} placeholder="https://exemplo.com/imagem.jpg" />
-              {formErrors.imageUrl && <p className={errorTextClass}>{formErrors.imageUrl}</p>}
-            </div>
-            <div className="md:col-span-2">
-                <label htmlFor="action" className="block text-sm font-medium text-gray-700 mb-1">Ação</label>
-                <textarea name="action" id="action" value={formData.action || ''} onChange={handleInputChange} rows={3} className={`${baseInputClass} border-gray-300`}></textarea>
-            </div>
-            <div className="md:col-span-2">
-                <label htmlFor="indication" className="block text-sm font-medium text-gray-700 mb-1">Indicação</label>
-                <textarea name="indication" id="indication" value={formData.indication || ''} onChange={handleInputChange} rows={3} className={`${baseInputClass} border-gray-300`}></textarea>
-            </div>
-            <div className="md:col-span-2">
-              <label htmlFor="visibility" className="block text-sm font-medium text-gray-700 mb-1">Visibilidade na Loja</label>
-              <select name="visibility" id="visibility" value={formData.visibility} onChange={handleInputChange} className={`${baseInputClass} border-gray-300`}>
-                <option value="in_stock">Em Estoque (Visível)</option>
-                <option value="out_of_stock">Esgotado (Visível com aviso)</option>
-                <option value="hidden">Não Exibir (Oculto da loja)</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex items-center space-x-4 pt-2">
-            <button type="submit" className="bg-primary-700 text-white font-bold py-2 px-6 rounded-md hover:bg-primary-800 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
-              {isEditing ? 'Atualizar Produto' : 'Adicionar Produto'}
-            </button>
-            {isEditing && (
-              <button type="button" onClick={resetForm} className="bg-gray-200 text-gray-800 font-bold py-2 px-6 rounded-md hover:bg-gray-300 transition-colors">
-                Cancelar Edição
-              </button>
-            )}
-          </div>
-        </form>
-      </div>
-
       {/* Orders Report */}
       <div className="mt-12">
         <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
@@ -613,6 +584,56 @@ ${itemsText}
             <button onClick={openTxtExportModal} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-blue-700 transition-colors text-sm">Exportar TXT (WhatsApp)</button>
           </div>
         </div>
+
+        {/* Order Filters */}
+        <div className="p-4 bg-white rounded-lg shadow-sm border border-gray-200 mb-4">
+            <h3 className="text-lg font-semibold text-gray-700 mb-3">Filtrar Pedidos</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <input
+                    type="text"
+                    placeholder="Buscar por cliente, CPF, email..."
+                    value={orderSearchTerm}
+                    onChange={e => setOrderSearchTerm(e.target.value)}
+                    className={`${baseInputClass} md:col-span-2 lg:col-span-1`}
+                />
+                <select
+                    value={orderFilterStatus}
+                    onChange={e => setOrderFilterStatus(e.target.value as any)}
+                    className={baseInputClass}
+                >
+                    <option value="all">Todos Status Venda</option>
+                    <option value="open">Aberto</option>
+                    <option value="completed">Concluída</option>
+                </select>
+                <select
+                    value={orderFilterCustomerStatus}
+                    onChange={e => setOrderFilterCustomerStatus(e.target.value as any)}
+                    className={baseInputClass}
+                >
+                    <option value="all">Todos Status Cadastro</option>
+                    <option value="pending">Pendente</option>
+                    <option value="registered">Realizado</option>
+                </select>
+                <div className="flex items-center gap-2">
+                    <input 
+                        type="date" 
+                        value={orderStartDate} 
+                        onChange={e => setOrderStartDate(e.target.value)} 
+                        className={baseInputClass}
+                        aria-label="Data de início"
+                    />
+                    <span className="text-gray-600">até</span>
+                    <input 
+                        type="date" 
+                        value={orderEndDate} 
+                        onChange={e => setOrderEndDate(e.target.value)} 
+                        className={baseInputClass}
+                        aria-label="Data de fim"
+                    />
+                </div>
+            </div>
+        </div>
+
         <div className="bg-white shadow-md rounded-lg overflow-x-auto border border-gray-200">
            <table className="w-full text-sm text-left text-gray-500">
                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
@@ -629,8 +650,8 @@ ${itemsText}
                     </tr>
                 </thead>
                 <tbody>
-                    {orders.length > 0 ? (
-                        orders.map(order => 
+                    {filteredOrders.length > 0 ? (
+                        filteredOrders.map(order => 
                             (
                                 <tr key={order.id} className="bg-white border-b hover:bg-gray-50">
                                     <td className="px-4 py-4 whitespace-nowrap">
@@ -697,17 +718,17 @@ ${itemsText}
                     ) : (
                         <tr>
                             <td colSpan={9} className="text-center text-gray-500 py-8">
-                                Nenhum pedido registrado.
+                                Nenhum pedido encontrado. Tente ajustar seus filtros.
                             </td>
                         </tr>
                     )}
                 </tbody>
-                 {orders.length > 0 && (
+                 {filteredOrders.length > 0 && (
                     <tfoot className="bg-gray-50 font-semibold">
                          <tr>
-                            <td colSpan={4} className="px-4 py-3 text-right text-gray-800 uppercase">Total Geral</td>
+                            <td colSpan={4} className="px-4 py-3 text-right text-gray-800 uppercase">Total (Filtrado)</td>
                             <td className="px-4 py-3 text-right text-gray-900">
-                                {formatCurrency(orders.reduce((acc, order) => acc + order.totalPrice, 0))}
+                                {formatCurrency(filteredOrders.reduce((acc, order) => acc + order.totalPrice, 0))}
                             </td>
                             <td colSpan={4}></td>
                         </tr>
@@ -715,6 +736,65 @@ ${itemsText}
                 )}
             </table>
         </div>
+      </div>
+      
+      {/* Product Form */}
+      <div id="product-form" className="bg-white p-6 rounded-lg shadow-md border border-gray-200 scroll-mt-20">
+        <h2 className="text-2xl font-bold text-gray-800 mb-4">{isEditing ? 'Editar Produto' : 'Adicionar Novo Produto'}</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+            <div>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Nome do Produto</label>
+              <input type="text" name="name" id="name" value={formData.name} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.name ? errorInputClass : 'border-gray-300'}`} />
+              {formErrors.name && <p className={errorTextClass}>{formErrors.name}</p>}
+            </div>
+            <div>
+              <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
+              <input type="text" name="category" id="category" value={formData.category} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.category ? errorInputClass : 'border-gray-300'}`} />
+              {formErrors.category && <p className={errorTextClass}>{formErrors.category}</p>}
+            </div>
+            <div>
+              <label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-1">Preço (R$)</label>
+              <input type="number" name="price" id="price" value={formData.price} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.price ? errorInputClass : 'border-gray-300'}`} step="0.01" min="0" />
+              {formErrors.price && <p className={errorTextClass}>{formErrors.price}</p>}
+            </div>
+             <div>
+              <label htmlFor="quantityInfo" className="block text-sm font-medium text-gray-700 mb-1">Informação de Quantidade</label>
+              <input type="text" name="quantityInfo" id="quantityInfo" value={formData.quantityInfo || ''} onChange={handleInputChange} className={`${baseInputClass} border-gray-300`} placeholder="Ex: 180 cápsulas" />
+            </div>
+            <div className="md:col-span-2">
+              <label htmlFor="imageUrl" className="block text-sm font-medium text-gray-700 mb-1">URL da Imagem</label>
+              <input type="url" name="imageUrl" id="imageUrl" value={formData.imageUrl} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.imageUrl ? errorInputClass : 'border-gray-300'}`} placeholder="https://exemplo.com/imagem.jpg" />
+              {formErrors.imageUrl && <p className={errorTextClass}>{formErrors.imageUrl}</p>}
+            </div>
+            <div className="md:col-span-2">
+                <label htmlFor="action" className="block text-sm font-medium text-gray-700 mb-1">Ação</label>
+                <textarea name="action" id="action" value={formData.action || ''} onChange={handleInputChange} rows={3} className={`${baseInputClass} border-gray-300`}></textarea>
+            </div>
+            <div className="md:col-span-2">
+                <label htmlFor="indication" className="block text-sm font-medium text-gray-700 mb-1">Indicação</label>
+                <textarea name="indication" id="indication" value={formData.indication || ''} onChange={handleInputChange} rows={3} className={`${baseInputClass} border-gray-300`}></textarea>
+            </div>
+            <div className="md:col-span-2">
+              <label htmlFor="visibility" className="block text-sm font-medium text-gray-700 mb-1">Visibilidade na Loja</label>
+              <select name="visibility" id="visibility" value={formData.visibility} onChange={handleInputChange} className={`${baseInputClass} border-gray-300`}>
+                <option value="in_stock">Em Estoque (Visível)</option>
+                <option value="out_of_stock">Esgotado (Visível com aviso)</option>
+                <option value="hidden">Não Exibir (Oculto da loja)</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex items-center space-x-4 pt-2">
+            <button type="submit" className="bg-primary-700 text-white font-bold py-2 px-6 rounded-md hover:bg-primary-800 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+              {isEditing ? 'Atualizar Produto' : 'Adicionar Produto'}
+            </button>
+            {isEditing && (
+              <button type="button" onClick={resetForm} className="bg-gray-200 text-gray-800 font-bold py-2 px-6 rounded-md hover:bg-gray-300 transition-colors">
+                Cancelar Edição
+              </button>
+            )}
+          </div>
+        </form>
       </div>
 
       {/* Product List */}
@@ -852,13 +932,13 @@ ${itemsText}
             </button>
             <h2 className="text-xl font-bold text-gray-900 mb-4">Exportar para WhatsApp</h2>
             <div className="bg-gray-100 p-4 rounded-md max-h-80 overflow-y-auto border border-gray-200 mb-4">
-              <pre className="text-sm text-gray-800 whitespace-pre-wrap">{txtExportContent}</pre>
+              <pre className="text-sm text-gray-800 whitespace-pre-wrap">{txtExportContent || 'Nenhum pedido para exportar com os filtros atuais.'}</pre>
             </div>
             <div className="flex justify-end items-center gap-4">
               <span className={`text-green-600 font-semibold transition-opacity duration-300 ${copySuccess ? 'opacity-100' : 'opacity-0'}`}>
                 {copySuccess}
               </span>
-              <button onClick={handleCopyTxt} className="bg-primary-700 text-white font-bold py-2 px-6 rounded-md hover:bg-primary-800 transition-colors">
+              <button onClick={handleCopyTxt} className="bg-primary-700 text-white font-bold py-2 px-6 rounded-md hover:bg-primary-800 transition-colors disabled:bg-gray-400" disabled={!txtExportContent}>
                 Copiar Texto
               </button>
             </div>
