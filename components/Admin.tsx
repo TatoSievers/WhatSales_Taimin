@@ -358,7 +358,10 @@ const Admin: React.FC = () => {
         clearTimeout(observationUpdateTimers.current[orderId]);
     }
     observationUpdateTimers.current[orderId] = window.setTimeout(() => {
-        handleOrderUpdate(orderId, { observation: value });
+        const order = orders.find(o => o.id === orderId);
+        if (order) {
+            updateOrder(order);
+        }
     }, 700);
   };
 
@@ -420,6 +423,30 @@ const Admin: React.FC = () => {
     }
     return duplicates;
   }, [orders]);
+
+  useEffect(() => {
+    const duplicateText = '(PEDIDO DUPLICADO)';
+    const ordersThatNeedUpdate = orders.filter(order => 
+        duplicateOrderIds.has(order.id) && !order.observation.startsWith(duplicateText)
+    );
+
+    if (ordersThatNeedUpdate.length > 0) {
+      const updatedOrdersMap = new Map<string, Order>();
+      ordersThatNeedUpdate.forEach(order => {
+        const newObservation = order.observation ? `${duplicateText} ${order.observation}` : duplicateText;
+        const updatedOrder = { ...order, observation: newObservation };
+        updatedOrdersMap.set(order.id, updatedOrder);
+      });
+
+      setOrders(currentOrders =>
+        currentOrders.map(o => updatedOrdersMap.get(o.id) || o)
+      );
+      
+      updatedOrdersMap.forEach(updatedOrder => {
+        updateOrder(updatedOrder);
+      });
+    }
+  }, [duplicateOrderIds]);
 
 
   const filteredOrders = useMemo(() => {
@@ -652,11 +679,6 @@ ${itemsText}
                     {filteredOrders.length > 0 ? (
                         filteredOrders.map(order => {
                             const isDuplicate = duplicateOrderIds.has(order.id);
-                            const duplicateText = '(PEDIDO DUPLICADO)';
-                            let observationDisplayValue = order.observation;
-                            if (isDuplicate && !order.observation.includes(duplicateText)) {
-                                observationDisplayValue = order.observation ? `${duplicateText} ${order.observation}` : duplicateText;
-                            }
                         
                             return (
                                 <tr key={order.id} className={`border-b ${isDuplicate ? 'bg-yellow-100 hover:bg-yellow-200' : 'bg-white hover:bg-gray-50'}`}>
@@ -702,7 +724,7 @@ ${itemsText}
                                     <td className="px-4 py-4">
                                       <input
                                         type="text"
-                                        value={observationDisplayValue}
+                                        value={order.observation}
                                         onChange={e => handleObservationChange(order.id, e.target.value)}
                                         className="w-full bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-sm focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
                                         placeholder="Adicionar nota..."
