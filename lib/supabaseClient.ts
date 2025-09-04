@@ -12,10 +12,18 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL;
 const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
 
+let initializationError: string | null = null;
 if (!supabaseUrl || !supabaseAnonKey) {
-  // Em vez de quebrar a aplicação, exibe um erro claro no console do desenvolvedor.
-  // A lógica de tratamento de erro na UI cuidará de informar o usuário.
-  console.error("ERRO CRÍTICO: As variáveis de ambiente do Supabase (VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY) não estão configuradas. O app não pode se conectar ao banco de dados. Verifique a configuração do seu projeto na Vercel.");
+  const missingVars = [];
+  if (!supabaseUrl) missingVars.push('VITE_SUPABASE_URL');
+  if (!supabaseAnonKey) missingVars.push('VITE_SUPABASE_ANON_KEY');
+  
+  initializationError = `ERRO DE CONFIGURAÇÃO: A(s) variável(is) de ambiente ${missingVars.join(' e ')} não foi(foram) encontrada(s). Verifique as configurações do seu projeto na Vercel.`;
+  console.error(initializationError);
 }
 
+// O cliente é criado mesmo que as chaves estejam ausentes; as chamadas falharão de forma controlada.
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Exporta a mensagem de erro específica para ser usada no contexto da aplicação.
+export const supabaseInitializationError = initializationError;

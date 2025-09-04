@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useProducts } from '../context/ProductContext';
 import { Product, NewProduct, Order } from '../types';
@@ -9,7 +8,207 @@ import { formatCurrency, getOrders, updateOrder, deleteOrder } from '../utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { Bar, Line, Pie } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  PointElement,
+  LineElement,
+  ArcElement,
+  TimeScale,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import 'chartjs-adapter-date-fns';
+import { ptBR } from 'date-fns/locale';
+import { parseISO, startOfDay, endOfDay } from 'date-fns';
 
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  PointElement,
+  LineElement,
+  ArcElement,
+  TimeScale,
+  Title,
+  Tooltip,
+  Legend
+);
+
+// --- DASHBOARD COMPONENTS --- //
+
+const DollarSignIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8v1m0 8v1m0-6v1m0 6v1M6 6h12a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2z" />
+    </svg>
+);
+
+const ShoppingBagIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+    </svg>
+);
+
+const UsersIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21a6 6 0 00-9-5.197M15 21a6 6 0 00-9-5.197" />
+    </svg>
+);
+
+const KpiCard = ({ title, value, icon }: { title: string; value: string | number; icon: React.ReactNode }) => (
+    <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 flex items-center space-x-4">
+        <div className="bg-primary-100 p-4 rounded-full">{icon}</div>
+        <div>
+            <p className="text-sm text-gray-500 font-medium uppercase tracking-wider">{title}</p>
+            <p className="text-3xl font-bold text-gray-800">{value}</p>
+        </div>
+    </div>
+);
+
+
+const Dashboard = ({ orders, products }: { orders: Order[], products: Product[] }) => {
+    const today = new Date();
+    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    const [startDate, setStartDate] = useState(firstDayOfMonth.toISOString().split('T')[0]);
+    const [endDate, setEndDate] = useState(today.toISOString().split('T')[0]);
+
+    const filteredOrders = useMemo(() => {
+        if (!startDate || !endDate) return orders;
+        const start = startOfDay(parseISO(startDate));
+        const end = endOfDay(parseISO(endDate));
+        return orders.filter(order => {
+            const orderDate = parseISO(order.date);
+            return orderDate >= start && orderDate <= end;
+        });
+    }, [orders, startDate, endDate]);
+
+    const kpiData = useMemo(() => {
+        const totalRevenue = filteredOrders.reduce((sum, order) => sum + order.totalPrice, 0);
+        const totalOrders = filteredOrders.length;
+        const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+        const uniqueCustomers = new Set(filteredOrders.map(order => order.customer.cpf)).size;
+        return { totalRevenue, totalOrders, averageOrderValue, uniqueCustomers };
+    }, [filteredOrders]);
+    
+    const chartData = useMemo(() => {
+        // Sales over Time
+        const salesByDay = filteredOrders.reduce((acc, order) => {
+            const day = startOfDay(parseISO(order.date)).toISOString();
+            acc[day] = (acc[day] || 0) + order.totalPrice;
+            return acc;
+        }, {} as Record<string, number>);
+
+        const sortedDays = Object.keys(salesByDay).sort((a,b) => new Date(a).getTime() - new Date(b).getTime());
+
+        const salesOverTimeData = {
+            labels: sortedDays,
+            datasets: [{
+                label: 'Receita',
+                data: sortedDays.map(day => salesByDay[day]),
+                borderColor: '#15803d',
+                backgroundColor: 'rgba(21, 128, 61, 0.1)',
+                fill: true,
+                tension: 0.3,
+            }]
+        };
+
+        // Top Selling Products
+        const productSales = filteredOrders
+            .flatMap(o => o.items)
+            .reduce((acc, item) => {
+                acc[item.name] = (acc[item.name] || 0) + item.quantity;
+                return acc;
+            }, {} as Record<string, number>);
+        
+        const topProducts = Object.entries(productSales)
+            .sort(([, qtyA], [, qtyB]) => qtyB - qtyA)
+            .slice(0, 10);
+
+        const topProductsData = {
+            labels: topProducts.map(([name]) => name),
+            datasets: [{
+                label: 'Unidades Vendidas',
+                data: topProducts.map(([, qty]) => qty),
+                backgroundColor: '#22c55e',
+                borderColor: '#16a34a',
+                borderWidth: 1,
+            }]
+        };
+
+        // Sales by Category
+        const categorySales = filteredOrders
+            .flatMap(o => o.items)
+            .reduce((acc, item) => {
+                const category = products.find(p => p.id === item.id)?.category || 'Outros';
+                acc[category] = (acc[category] || 0) + item.price * item.quantity;
+                return acc;
+            }, {} as Record<string, number>);
+            
+        const salesByCategoryData = {
+            labels: Object.keys(categorySales),
+            datasets: [{
+                label: 'Vendas por Categoria',
+                data: Object.values(categorySales),
+                backgroundColor: ['#14532d', '#166534', '#15803d', '#16a34a', '#22c55e', '#4ade80', '#86efac'],
+                hoverOffset: 4,
+            }]
+        };
+
+        return { salesOverTimeData, topProductsData, salesByCategoryData };
+    }, [filteredOrders, products]);
+    
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } }
+    };
+
+    return (
+        <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 mb-8">
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">Dashboard Gerencial</h2>
+            
+            <div className="mb-6 p-4 bg-gray-50 rounded-md border border-gray-200 flex flex-col sm:flex-row items-center gap-4">
+                <label className="font-semibold text-gray-700">Filtrar por Período:</label>
+                <div className="flex items-center gap-2">
+                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-white" />
+                    <span className="text-gray-600">até</span>
+                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-white" />
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <KpiCard title="Receita Total" value={formatCurrency(kpiData.totalRevenue)} icon={<DollarSignIcon />} />
+                <KpiCard title="Total de Pedidos" value={kpiData.totalOrders} icon={<ShoppingBagIcon />} />
+                <KpiCard title="Ticket Médio" value={formatCurrency(kpiData.averageOrderValue)} icon={<DollarSignIcon />} />
+                <KpiCard title="Clientes Únicos" value={kpiData.uniqueCustomers} icon={<UsersIcon />} />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 h-96">
+                    <h3 className="text-lg font-semibold text-gray-700 mb-4">Vendas ao Longo do Tempo</h3>
+                    <Line data={chartData.salesOverTimeData} options={{...chartOptions, scales: { x: { type: 'time', time: { unit: 'day', displayFormats: { day: 'dd/MM' } }, adapters: { date: { locale: ptBR } } } } }} />
+                </div>
+                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 h-96">
+                    <h3 className="text-lg font-semibold text-gray-700 mb-4">Produtos Mais Vendidos</h3>
+                    <Bar data={chartData.topProductsData} options={{ ...chartOptions, indexAxis: 'y' as const }} />
+                </div>
+                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 h-96 flex flex-col items-center justify-center col-span-1 lg:col-span-2">
+                    <h3 className="text-lg font-semibold text-gray-700 mb-4">Vendas por Categoria</h3>
+                    <div className="w-full h-full max-h-80">
+                      <Pie data={chartData.salesByCategoryData} options={{...chartOptions, plugins: { legend: { display: true, position: 'right' as const } } }} />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- END DASHBOARD --- //
 
 const initialFormState: NewProduct = {
   name: '',
@@ -209,8 +408,77 @@ const Admin: React.FC = () => {
     }
   };
 
-  const exportToPDF = useCallback(() => { /* ... ( unchanged ) ... */ }, [orders]);
-  const exportToExcel = useCallback(() => { /* ... ( unchanged ) ... */ }, [orders]);
+  const exportToPDF = useCallback(() => {
+    const doc = new jsPDF();
+    doc.text("Relatório de Pedidos - Taimin", 14, 16);
+    
+    const tableColumn = ["Data", "Cliente", "CPF", "Itens", "Total", "Status Venda"];
+    const tableRows: any[][] = [];
+
+    orders.forEach(order => {
+        const orderData = [
+            new Date(order.date).toLocaleDateString('pt-BR'),
+            order.customer.name,
+            order.customer.cpf,
+            order.items.map(i => `${i.quantity}x ${i.name}`).join('\n'),
+            formatCurrency(order.totalPrice),
+            order.status === 'completed' ? 'Concluída' : 'Aberto'
+        ];
+        tableRows.push(orderData);
+    });
+
+    autoTable(doc, {
+        head: [tableColumn],
+        body: tableRows,
+        startY: 20,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [34, 84, 61] }, // Cor primária
+    });
+
+    doc.save('relatorio_pedidos_taimin.pdf');
+  }, [orders]);
+
+  const exportToExcel = useCallback(() => {
+    const flattenedData = orders.flatMap(order => 
+        order.items.map(item => ({
+            'ID Pedido': order.id,
+            'Data': new Date(order.date).toLocaleString('pt-BR'),
+            'Cliente': order.customer.name,
+            'CPF': order.customer.cpf,
+            'Email': order.customer.email,
+            'Status Cadastro': order.customerStatus === 'registered' ? 'Realizado' : 'Pendente',
+            'Status Venda': order.status === 'completed' ? 'Concluída' : 'Aberto',
+            'Observação': order.observation,
+            'ID Produto': item.id,
+            'Produto': item.name,
+            'Categoria': item.category,
+            'Quantidade': item.quantity,
+            'Preço Unitário': item.price,
+            'Subtotal Item': item.price * item.quantity,
+            'Total Pedido': order.totalPrice
+        }))
+    );
+
+    if (flattenedData.length === 0) {
+        alert("Não há dados de pedidos para exportar.");
+        return;
+    }
+
+    const worksheet = XLSX.utils.json_to_sheet(flattenedData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Pedidos');
+    
+    const headerKeys = Object.keys(flattenedData[0] || {});
+    const colWidths = headerKeys.map(key => ({
+        wch: Math.max(
+            key.length,
+            ...flattenedData.map(row => (row[key as keyof typeof row] || '').toString().length)
+        ) + 2
+    }));
+    worksheet['!cols'] = colWidths;
+
+    XLSX.writeFile(workbook, 'relatorio_pedidos_taimin.xlsx');
+  }, [orders]);
 
   const openTxtExportModal = useCallback(() => {
     const fileContent = orders.map(order => {
@@ -274,11 +542,12 @@ ${itemsText}
         </div>
       )}
 
+      <Dashboard orders={orders} products={products} />
+
       {/* Product Form */}
       <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
         <h2 className="text-2xl font-bold text-gray-800 mb-4">{isEditing ? 'Editar Produto' : 'Adicionar Novo Produto'}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* ... (form fields unchanged) ... */}
            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Nome do Produto</label>
@@ -345,7 +614,6 @@ ${itemsText}
           </div>
         </div>
         <div className="bg-white shadow-md rounded-lg overflow-x-auto border border-gray-200">
-           { /* ... (Order table unchanged) ... */ }
            <table className="w-full text-sm text-left text-gray-500">
                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                     <tr>
@@ -544,7 +812,7 @@ ${itemsText}
       </div>
 
       {/* Modals */}
-      {isDeleteModalOpen && orderToDelete && ( /* ... (unchanged) ... */ <div className="fixed inset-0 bg-black bg-opacity-60 z-[70] flex items-center justify-center p-4" aria-modal="true" role="dialog">
+      {isDeleteModalOpen && orderToDelete && ( <div className="fixed inset-0 bg-black bg-opacity-60 z-[70] flex items-center justify-center p-4" aria-modal="true" role="dialog">
           <div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 max-w-md w-full text-left transform transition-all relative">
             <h2 className="text-xl font-bold text-gray-900 mb-2">Confirmar Exclusão</h2>
             <p className="text-gray-600 mb-4">

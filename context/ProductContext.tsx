@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useMemo, useCallback, useEffect } from 'react';
 import { Product, ProductContextType, NewProduct } from '../types';
-import { supabase } from '../lib/supabaseClient';
+import { supabase, supabaseInitializationError } from '../lib/supabaseClient';
 
 const ProductContext = createContext<ProductContextType | undefined>(undefined);
 
@@ -10,6 +10,14 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [error, setError] = useState<string | null>(null);
 
   const fetchProducts = useCallback(async () => {
+    // Primeiro, verifica se houve um erro na inicialização do cliente Supabase.
+    if (supabaseInitializationError) {
+      setError(supabaseInitializationError); // Usa a mensagem de erro específica.
+      setProducts([]);
+      setLoading(false);
+      return;
+    }
+
     setError(null);
     try {
       const { data, error: dbError } = await supabase
@@ -25,7 +33,7 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     } catch (err: any) {
       console.error('Falha detalhada ao buscar produtos:', err);
-      setError('Não foi possível carregar os produtos. Verifique sua conexão e a configuração do banco de dados.');
+      setError('Não foi possível carregar os produtos. Verifique sua conexão e se as chaves de API estão corretas e válidas.');
       setProducts([]);
     } finally {
       setLoading(false);
