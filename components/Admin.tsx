@@ -140,26 +140,7 @@ const Dashboard = ({ orders, products }: { orders: Order[], products: Product[] 
             }]
         };
 
-        // Sales by Category
-        const categorySales = filteredOrders
-            .flatMap(o => o.items)
-            .reduce((acc, item) => {
-                const category = products.find(p => p.id === item.id)?.category || 'Outros';
-                acc[category] = (acc[category] || 0) + item.price * item.quantity;
-                return acc;
-            }, {} as Record<string, number>);
-            
-        const salesByCategoryData = {
-            labels: Object.keys(categorySales),
-            datasets: [{
-                label: 'Vendas por Categoria',
-                data: Object.values(categorySales),
-                backgroundColor: ['#14532d', '#166534', '#15803d', '#16a34a', '#22c55e', '#4ade80', '#86efac'],
-                hoverOffset: 4,
-            }]
-        };
-
-        return { salesOverTimeData, topProductsData, salesByCategoryData };
+        return { salesOverTimeData, topProductsData };
     }, [filteredOrders, products]);
     
     const chartOptions = {
@@ -196,12 +177,6 @@ const Dashboard = ({ orders, products }: { orders: Order[], products: Product[] 
                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 h-96">
                     <h3 className="text-lg font-semibold text-gray-700 mb-4">Produtos Mais Vendidos</h3>
                     <Bar data={chartData.topProductsData} options={{ ...chartOptions, indexAxis: 'y' as const }} />
-                </div>
-                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 h-96 flex flex-col items-center justify-center col-span-1 lg:col-span-2">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-4">Vendas por Categoria</h3>
-                    <div className="w-full h-full max-h-80">
-                      <Pie data={chartData.salesByCategoryData} options={{...chartOptions, plugins: { legend: { display: true, position: 'right' as const } } }} />
-                    </div>
                 </div>
             </div>
         </div>
@@ -422,6 +397,30 @@ const Admin: React.FC = () => {
   const baseInputClass = "w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-gray-100 text-gray-800 placeholder-gray-500";
   const errorInputClass = "border-red-500 ring-1 ring-red-500";
   const errorTextClass = "text-red-600 text-sm mt-1";
+  
+  const duplicateOrderIds = useMemo(() => {
+    const seenOrders = new Map<string, string>(); // Map<compositeKey, firstOrderId>
+    const duplicates = new Set<string>();
+
+    // Sort orders by date to ensure the first one encountered is the original
+    const sortedOrders = [...orders].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    for (const order of sortedOrders) {
+      const itemsKey = order.items
+        .map(item => `${item.id}:${item.quantity}`)
+        .sort()
+        .join(',');
+      const compositeKey = `${order.customer.cpf}|${order.totalPrice}|${itemsKey}`;
+
+      if (seenOrders.has(compositeKey)) {
+        duplicates.add(order.id);
+      } else {
+        seenOrders.set(compositeKey, order.id);
+      }
+    }
+    return duplicates;
+  }, [orders]);
+
 
   const filteredOrders = useMemo(() => {
     return orders.filter(order => {
@@ -651,9 +650,16 @@ ${itemsText}
                 </thead>
                 <tbody>
                     {filteredOrders.length > 0 ? (
-                        filteredOrders.map(order => 
-                            (
-                                <tr key={order.id} className="bg-white border-b hover:bg-gray-50">
+                        filteredOrders.map(order => {
+                            const isDuplicate = duplicateOrderIds.has(order.id);
+                            const duplicateText = '(PEDIDO DUPLICADO)';
+                            let observationDisplayValue = order.observation;
+                            if (isDuplicate && !order.observation.includes(duplicateText)) {
+                                observationDisplayValue = order.observation ? `${duplicateText} ${order.observation}` : duplicateText;
+                            }
+                        
+                            return (
+                                <tr key={order.id} className={`border-b ${isDuplicate ? 'bg-yellow-100 hover:bg-yellow-200' : 'bg-white hover:bg-gray-50'}`}>
                                     <td className="px-4 py-4 whitespace-nowrap">
                                         {new Date(order.date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                     </td>
@@ -696,7 +702,7 @@ ${itemsText}
                                     <td className="px-4 py-4">
                                       <input
                                         type="text"
-                                        value={order.observation}
+                                        value={observationDisplayValue}
                                         onChange={e => handleObservationChange(order.id, e.target.value)}
                                         className="w-full bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-sm focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
                                         placeholder="Adicionar nota..."
@@ -714,7 +720,7 @@ ${itemsText}
                                     </td>
                                 </tr>
                             )
-                        )
+                        })
                     ) : (
                         <tr>
                             <td colSpan={9} className="text-center text-gray-500 py-8">
