@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Product } from '../types';
 import { useCart } from '../context/CartContext';
@@ -36,7 +35,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm group overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-1 flex flex-col">
         <div className="relative w-full h-56 bg-white p-2 flex items-center justify-center">
           {promoIsActive && (
-             <span className="absolute top-2 left-2 bg-red-600 text-white text-xs font-bold py-1 px-3 rounded-full shadow-lg z-10 transform -rotate-12">
+             <span className="absolute top-3 left-3 bg-red-600 text-white text-base font-bold py-1 px-4 rounded-full shadow-lg z-10 transform -rotate-12">
               PROMO
             </span>
           )}

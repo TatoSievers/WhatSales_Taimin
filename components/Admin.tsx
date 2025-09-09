@@ -24,12 +24,9 @@ import {
   Legend,
 } from 'chart.js';
 import 'chartjs-adapter-date-fns';
-// FIX: The version of date-fns in this project appears to require submodule imports for functions and locales.
-// FIX: Changed date-fns imports to use specific submodules for functions and locales, which is required by this project's version of date-fns.
-import ptBR from 'date-fns/locale/pt-BR';
-import parseISO from 'date-fns/parseISO';
-import startOfDay from 'date-fns/startOfDay';
-import endOfDay from 'date-fns/endOfDay';
+// FIX: Corrected date-fns imports to use named imports from the main package. This resolves the "not callable" error on `endOfDay`, which likely stemmed from using an incompatible import syntax with the installed version of date-fns.
+import { endOfDay, parseISO, startOfDay } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 ChartJS.register(
   CategoryScale,

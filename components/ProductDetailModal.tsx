@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Product } from '../types';
 import CloseIcon from './icons/CloseIcon';
@@ -46,7 +45,7 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
                         </span>
                     )}
                     {promoIsActive && (
-                         <span className="inline-block bg-red-100 text-red-800 text-xs font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide">
+                         <span className="inline-block bg-red-100 text-red-800 text-sm font-semibold px-3 py-1 rounded-full uppercase tracking-wide">
                             Promoção
                         </span>
                     )}
