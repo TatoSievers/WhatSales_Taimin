@@ -18,6 +18,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
 
   const promoIsActive = isPromoActive(product);
   const effectivePrice = promoIsActive && product.promoPrice ? product.promoPrice : product.price;
+  const showDetails = product.action || product.indication;
 
   useEffect(() => {
     setTotalPrice(effectivePrice * quantity);
@@ -30,10 +31,28 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
     setQuantity(1);
   };
 
+  const InfoIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+
   return (
     <>
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm group overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-1 flex flex-col">
-        <div className="relative w-full h-56 bg-white p-2 flex items-center justify-center">
+        <div 
+            onClick={() => showDetails && setIsModalOpen(true)}
+            className={`relative w-full h-56 bg-white p-2 flex items-center justify-center ${showDetails ? 'cursor-pointer' : ''}`}
+            role={showDetails ? 'button' : undefined}
+            tabIndex={showDetails ? 0 : -1}
+            onKeyDown={(e) => {
+              if (showDetails && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault();
+                setIsModalOpen(true);
+              }
+            }}
+            aria-label={showDetails ? `Ver detalhes de ${product.name}` : undefined}
+        >
           {promoIsActive && (
              <span className="absolute top-3 left-3 bg-red-600 text-white text-base font-bold py-1 px-4 rounded-full shadow-lg z-10 transform -rotate-12">
               PROMO
@@ -48,6 +67,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
             <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-600 text-white text-sm font-bold py-1 px-4 rounded-md shadow-lg transform -rotate-12 select-none">
               ESGOTADO
             </span>
+          )}
+          {showDetails && (
+            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-300 flex flex-col items-center justify-center space-y-2 p-4">
+                <InfoIcon />
+                <span className="text-white text-center text-lg font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    Ver Detalhes
+                </span>
+            </div>
           )}
         </div>
         <div className="p-4 flex flex-col flex-grow">
@@ -98,15 +125,6 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
               <p className="text-xs text-gray-500 -mt-1">+ frete</p>
             </div>
             
-            {(product.action || product.indication) && (
-              <button
-                onClick={() => setIsModalOpen(true)}
-                className="w-full text-center text-primary-700 font-semibold py-2 px-4 rounded-md hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors text-sm mb-2"
-              >
-                Ver Detalhes
-              </button>
-            )}
-
             <button
               onClick={handleAddToCart}
               className="w-full bg-primary-700 text-white font-bold py-2 px-4 rounded-md hover:bg-primary-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"

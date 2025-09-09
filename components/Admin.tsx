@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useProducts } from '../context/ProductContext';
 import { Product, NewProduct, Order } from '../types';
@@ -24,8 +23,10 @@ import {
   Legend,
 } from 'chart.js';
 import 'chartjs-adapter-date-fns';
-// FIX: Corrected date-fns imports to use named imports from the main package. This resolves the "not callable" error on `endOfDay`, which likely stemmed from using an incompatible import syntax with the installed version of date-fns.
-import { endOfDay, parseISO, startOfDay } from 'date-fns';
+// FIX: Switched to sub-path imports for date-fns to resolve module resolution errors. This is more robust and avoids potential issues with bundler configurations or package versions.
+import { endOfDay } from 'date-fns';
+import { parseISO } from 'date-fns';
+import { startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 ChartJS.register(
