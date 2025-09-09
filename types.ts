@@ -3,6 +3,8 @@ export interface Product {
   id: number;
   name: string;
   price: number;
+  promoPrice?: number | null;
+  promoEndDate?: string | null;
   imageUrl: string;
   category: string;
   action?: string;

@@ -1,9 +1,22 @@
 
-import { Order, CartItem, Customer } from './types';
+import { Order, CartItem, Customer, Product } from './types';
 import { supabase } from './lib/supabaseClient';
 
 export const formatCurrency = (value: number): string => {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+export const isPromoActive = (product: Product): boolean => {
+  if (!product.promoPrice || product.promoPrice <= 0 || !product.promoEndDate) {
+    return false;
+  }
+  const promoEnd = new Date(product.promoEndDate);
+  const today = new Date();
+  // The promo is valid until the end of the selected day.
+  promoEnd.setUTCHours(23, 59, 59, 999);
+  // Ensure we compare just the date part by setting today's time to the start.
+  today.setHours(0, 0, 0, 0);
+  return promoEnd >= today;
 };
 
 export const getDosageForm = (productName: string): string | null => {

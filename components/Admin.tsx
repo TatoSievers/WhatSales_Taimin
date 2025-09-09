@@ -1,10 +1,11 @@
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useProducts } from '../context/ProductContext';
 import { Product, NewProduct, Order } from '../types';
 import EditIcon from './icons/EditIcon';
 import TrashIcon from './icons/TrashIcon';
 import CloseIcon from './icons/CloseIcon';
-import { formatCurrency, getOrders, updateOrder, deleteOrder } from '../utils';
+import { formatCurrency, getOrders, updateOrder, deleteOrder, isPromoActive } from '../utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -24,8 +25,11 @@ import {
 } from 'chart.js';
 import 'chartjs-adapter-date-fns';
 // FIX: The version of date-fns in this project appears to require submodule imports for functions and locales.
-import { ptBR } from 'date-fns/locale';
-import { parseISO, startOfDay, endOfDay } from 'date-fns';
+// FIX: Changed date-fns imports to use specific submodules for functions and locales, which is required by this project's version of date-fns.
+import ptBR from 'date-fns/locale/pt-BR';
+import parseISO from 'date-fns/parseISO';
+import startOfDay from 'date-fns/startOfDay';
+import endOfDay from 'date-fns/endOfDay';
 
 ChartJS.register(
   CategoryScale,
@@ -189,6 +193,8 @@ const Dashboard = ({ orders, products }: { orders: Order[], products: Product[] 
 const initialFormState: NewProduct = {
   name: '',
   price: 0,
+  promoPrice: 0,
+  promoEndDate: '',
   category: 'Fórmulas Magistrais Chinesas',
   imageUrl: '',
   quantityInfo: '',
@@ -261,6 +267,8 @@ const Admin: React.FC = () => {
       setFormData({
         name: isEditing.name,
         price: isEditing.price,
+        promoPrice: isEditing.promoPrice || 0,
+        promoEndDate: isEditing.promoEndDate ? isEditing.promoEndDate.split('T')[0] : '',
         category: isEditing.category,
         imageUrl: isEditing.imageUrl,
         quantityInfo: isEditing.quantityInfo || '',
@@ -302,7 +310,7 @@ const Admin: React.FC = () => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'price' ? parseFloat(value) || 0 : value
+      [name]: name === 'price' || name === 'promoPrice' ? parseFloat(value) || 0 : value
     }));
     if (formErrors[name]) {
       setFormErrors(prev => ({ ...prev, [name]: '' }));
@@ -319,11 +327,18 @@ const Admin: React.FC = () => {
     e.preventDefault();
     if (!validateForm()) return;
 
+    const productData = {
+      ...formData,
+      name: formData.name.toUpperCase(),
+      promoPrice: formData.promoPrice && formData.promoPrice > 0 ? formData.promoPrice : null,
+      promoEndDate: formData.promoEndDate || null,
+    };
+
     if (isEditing) {
-      await updateProduct(isEditing.id, { ...formData, name: formData.name.toUpperCase() });
+      await updateProduct(isEditing.id, productData);
       setSuccessMessage('Produto atualizado com sucesso!');
     } else {
-      await addProduct({ ...formData, name: formData.name.toUpperCase() });
+      await addProduct(productData);
       setSuccessMessage('Produto adicionado com sucesso!');
     }
     resetForm();
@@ -775,7 +790,7 @@ ${itemsText}
       <div id="product-form" className="bg-white p-6 rounded-lg shadow-md border border-gray-200 scroll-mt-20">
         <h2 className="text-2xl font-bold text-gray-800 mb-4">{isEditing ? 'Editar Produto' : 'Adicionar Novo Produto'}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Nome do Produto</label>
               <input type="text" name="name" id="name" value={formData.name} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.name ? errorInputClass : 'border-gray-300'}`} />
@@ -787,7 +802,7 @@ ${itemsText}
               {formErrors.category && <p className={errorTextClass}>{formErrors.category}</p>}
             </div>
             <div>
-              <label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-1">Preço (R$)</label>
+              <label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-1">Preço Padrão (R$)</label>
               <input type="number" name="price" id="price" value={formData.price} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.price ? errorInputClass : 'border-gray-300'}`} step="0.01" min="0" />
               {formErrors.price && <p className={errorTextClass}>{formErrors.price}</p>}
             </div>
@@ -799,6 +814,16 @@ ${itemsText}
               <label htmlFor="imageUrl" className="block text-sm font-medium text-gray-700 mb-1">URL da Imagem</label>
               <input type="url" name="imageUrl" id="imageUrl" value={formData.imageUrl} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.imageUrl ? errorInputClass : 'border-gray-300'}`} placeholder="https://exemplo.com/imagem.jpg" />
               {formErrors.imageUrl && <p className={errorTextClass}>{formErrors.imageUrl}</p>}
+            </div>
+             <div className="md:col-span-2 p-4 bg-primary-50 rounded-lg border border-primary-200 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                <div>
+                  <label htmlFor="promoPrice" className="block text-sm font-medium text-primary-800 mb-1">Preço Promocional (R$)</label>
+                  <input type="number" name="promoPrice" id="promoPrice" value={formData.promoPrice || ''} onChange={handleInputChange} className={`${baseInputClass}`} step="0.01" min="0" placeholder="Deixe 0 para não aplicar" />
+                </div>
+                <div>
+                  <label htmlFor="promoEndDate" className="block text-sm font-medium text-primary-800 mb-1">Data de Validade da Promoção</label>
+                  <input type="date" name="promoEndDate" id="promoEndDate" value={formData.promoEndDate || ''} onChange={handleInputChange} className={`${baseInputClass}`} />
+                </div>
             </div>
             <div className="md:col-span-2">
                 <label htmlFor="action" className="block text-sm font-medium text-gray-700 mb-1">Ação</label>
@@ -876,7 +901,8 @@ ${itemsText}
                     <th scope="col" className="px-6 py-3">Produto</th>
                     <th scope="col" className="px-6 py-3">Categoria</th>
                     <th scope="col" className="px-6 py-3">Visibilidade</th>
-                    <th scope="col" className="px-6 py-3">Preço</th>
+                    <th scope="col" className="px-6 py-3">Preço Padrão</th>
+                    <th scope="col" className="px-6 py-3">Promoção Ativa</th>
                     <th scope="col" className="px-6 py-3 text-right">Ações</th>
                   </tr>
                 </thead>
@@ -905,6 +931,16 @@ ${itemsText}
                         </select>
                       </td>
                       <td className="px-6 py-4 font-medium">{formatCurrency(product.price)}</td>
+                      <td className="px-6 py-4">
+                        {isPromoActive(product) && product.promoPrice ? (
+                          <div>
+                            <span className="font-bold text-red-600">{formatCurrency(product.promoPrice)}</span>
+                            {product.promoEndDate && <p className="text-xs text-gray-500">Expira: {new Date(product.promoEndDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p>}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end items-center space-x-3">
                           <button onClick={() => setIsEditing(product)} className="text-blue-600 hover:text-blue-800 p-1 rounded-full hover:bg-blue-100 transition-colors" aria-label={`Editar ${product.name}`}>

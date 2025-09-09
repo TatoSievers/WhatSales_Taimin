@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Product } from '../types';
 import { useCart } from '../context/CartContext';
-import { formatCurrency, getDosageForm } from '../utils';
+import { formatCurrency, getDosageForm, isPromoActive } from '../utils';
 import ProductDetailModal from './ProductDetailModal';
 
 interface ProductCardProps {
@@ -17,13 +17,17 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const isOutOfStock = product.visibility === 'out_of_stock';
 
+  const promoIsActive = isPromoActive(product);
+  const effectivePrice = promoIsActive && product.promoPrice ? product.promoPrice : product.price;
+
   useEffect(() => {
-    setTotalPrice(product.price * quantity);
-  }, [quantity, product.price]);
+    setTotalPrice(effectivePrice * quantity);
+  }, [quantity, effectivePrice]);
 
   const handleAddToCart = () => {
     if (isOutOfStock) return;
-    addToCart(product, quantity);
+    // Pass a product object with the price "locked-in" at the time of adding to cart.
+    addToCart({ ...product, price: effectivePrice }, quantity);
     setQuantity(1);
   };
 
@@ -31,6 +35,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
     <>
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm group overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-1 flex flex-col">
         <div className="relative w-full h-56 bg-white p-2 flex items-center justify-center">
+          {promoIsActive && (
+             <span className="absolute top-2 left-2 bg-red-600 text-white text-xs font-bold py-1 px-3 rounded-full shadow-lg z-10 transform -rotate-12">
+              PROMO
+            </span>
+          )}
           <img
             src={product.imageUrl}
             alt={product.name}
@@ -78,8 +87,15 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
               </div>
             </div>
 
-            <div className="mb-4">
-              <p className="text-xl font-bold text-primary-800">{formatCurrency(totalPrice)}</p>
+            <div className="mb-4 min-h-[56px]">
+              {promoIsActive ? (
+                <>
+                  <p className="text-sm text-gray-500 line-through">{formatCurrency(product.price * quantity)}</p>
+                  <p className="text-xl font-bold text-red-600 -mt-1">{formatCurrency(totalPrice)}</p>
+                </>
+              ) : (
+                <p className="text-xl font-bold text-primary-800">{formatCurrency(totalPrice)}</p>
+              )}
               <p className="text-xs text-gray-500 -mt-1">+ frete</p>
             </div>
             

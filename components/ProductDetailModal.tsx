@@ -2,7 +2,7 @@
 import React from 'react';
 import { Product } from '../types';
 import CloseIcon from './icons/CloseIcon';
-import { getDosageForm } from '../utils';
+import { getDosageForm, isPromoActive, formatCurrency } from '../utils';
 
 interface ProductDetailModalProps {
   product: Product;
@@ -11,6 +11,7 @@ interface ProductDetailModalProps {
 
 const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClose }) => {
   const dosageForm = getDosageForm(product.name);
+  const promoIsActive = isPromoActive(product);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 z-[60] flex items-center justify-center p-4" onClick={onClose} aria-modal="true" role="dialog">
@@ -23,7 +24,17 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
                  <img src={product.imageUrl} alt={product.name} className="w-full h-auto max-h-96 object-contain" />
             </div>
             <div className="p-6 flex flex-col">
-                 <h2 className="text-2xl font-bold text-primary-900 mb-2">{product.name}</h2>
+                 <h2 className="text-2xl font-bold text-primary-900 mb-1">{product.name}</h2>
+                 
+                 {promoIsActive && product.promoPrice ? (
+                    <div className="flex items-baseline gap-2 mb-2">
+                        <span className="text-3xl font-bold text-red-600">{formatCurrency(product.promoPrice)}</span>
+                        <span className="text-lg text-gray-500 line-through">{formatCurrency(product.price)}</span>
+                    </div>
+                    ) : (
+                    <p className="text-2xl font-bold text-primary-800 mb-2">{formatCurrency(product.price)}</p>
+                 )}
+
                  {product.quantityInfo && (
                     <p className="text-md text-gray-600 mb-2">{product.quantityInfo}</p>
                  )}
@@ -32,6 +43,11 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
                     {dosageForm && (
                         <span className="inline-block bg-primary-100 text-primary-800 text-xs font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide">
                             {dosageForm}
+                        </span>
+                    )}
+                    {promoIsActive && (
+                         <span className="inline-block bg-red-100 text-red-800 text-xs font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide">
+                            Promoção
                         </span>
                     )}
                 </div>
