@@ -24,10 +24,11 @@ import {
 } from 'chart.js';
 import 'chartjs-adapter-date-fns';
 // FIX: Switched to sub-path imports for date-fns to resolve module resolution errors. This is more robust and avoids potential issues with bundler configurations or package versions.
-import { endOfDay } from 'date-fns';
-import { parseISO } from 'date-fns';
-import { startOfDay } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+// FIX: Corrected date-fns imports to use sub-paths to resolve module resolution errors.
+import endOfDay from 'date-fns/endOfDay';
+import parseISO from 'date-fns/parseISO';
+import startOfDay from 'date-fns/startOfDay';
+import ptBR from 'date-fns/locale/pt-BR';
 
 ChartJS.register(
   CategoryScale,
