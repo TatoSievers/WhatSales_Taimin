@@ -57,7 +57,8 @@ export interface CartContextType {
   toggleCart: () => void;
   // Post-checkout flow
   showPostCheckoutModal: boolean;
-  openPostCheckoutModal: () => void;
+  postCheckoutMessage: string | null;
+  openPostCheckoutModal: (message?: string) => void;
   closePostCheckoutModal: () => void;
   // Email modal flow
   isEmailModalOpen: boolean;

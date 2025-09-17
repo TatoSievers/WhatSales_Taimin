@@ -2,7 +2,7 @@
 import React, { createContext, useState, useContext, useMemo, useCallback } from 'react';
 import { Product, CartItem, CartContextType, Customer } from '../types';
 import { WHATSAPP_NUMBER } from '../constants';
-import { formatCurrency, addOrder } from '../utils';
+import { formatCurrency, addOrder, isIOS } from '../utils';
 
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -12,6 +12,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [showPostCheckoutModal, setShowPostCheckoutModal] = useState(false);
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const [postCheckoutMessage, setPostCheckoutMessage] = useState<string | null>(null);
 
   const addToCart = useCallback((product: Product, quantity: number) => {
     if (quantity <= 0) return;
@@ -54,13 +55,17 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   // Post-checkout modal
-  const openPostCheckoutModal = useCallback(() => {
+  const openPostCheckoutModal = useCallback((message?: string) => {
+    if (typeof message === 'string') {
+      setPostCheckoutMessage(message);
+    }
     setIsCartOpen(false);
     setShowPostCheckoutModal(true);
   }, []);
 
   const closePostCheckoutModal = useCallback(() => {
     setShowPostCheckoutModal(false);
+    setPostCheckoutMessage(null);
   }, []);
   
   // Email modal
@@ -118,13 +123,16 @@ Equipe Taimin`;
       : 'Cadastro válido, Aguardo as instruções para pagamento e entrega.';
 
     const whatsappMessage = `Olá! Meu nome é ${customer.name} (CPF: ${customer.cpf}) e gostaria de fazer o seguinte pedido:\n\n${itemsText}\n\n*Total: ${formatCurrency(totalPriceValue)}*\n\n${closingMessage}`;
-    const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(whatsappMessage)}`;
-    
-    window.open(url, '_blank');
     
     closeEmailModal();
-    openPostCheckoutModal();
-
+    
+    if (isIOS()) {
+      openPostCheckoutModal(whatsappMessage);
+    } else {
+      const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(whatsappMessage)}`;
+      window.open(url, '_blank');
+      openPostCheckoutModal();
+    }
   }, [cartItems, closeEmailModal, openPostCheckoutModal]);
 
 
@@ -147,13 +155,14 @@ Equipe Taimin`;
     isCartOpen,
     toggleCart,
     showPostCheckoutModal,
+    postCheckoutMessage,
     openPostCheckoutModal,
     closePostCheckoutModal,
     isEmailModalOpen,
     openEmailModal,
     closeEmailModal,
     handleFinalCheckout
-  }), [cartItems, addToCart, removeFromCart, updateQuantity, clearCart, totalItems, totalPrice, isCartOpen, toggleCart, showPostCheckoutModal, openPostCheckoutModal, closePostCheckoutModal, isEmailModalOpen, openEmailModal, closeEmailModal, handleFinalCheckout]);
+  }), [cartItems, addToCart, removeFromCart, updateQuantity, clearCart, totalItems, totalPrice, isCartOpen, toggleCart, showPostCheckoutModal, postCheckoutMessage, openPostCheckoutModal, closePostCheckoutModal, isEmailModalOpen, openEmailModal, closeEmailModal, handleFinalCheckout]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 };
