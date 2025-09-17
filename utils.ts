@@ -1,4 +1,3 @@
-
 import { Order, CartItem, Customer, Product } from './types';
 import { supabase } from './lib/supabaseClient';
 
@@ -37,6 +36,11 @@ export const getDosageForm = (productName: string): string | null => {
     return 'Pomada';
   }
   return null;
+};
+
+export const isIOS = (): boolean => {
+  // This checks for iPad, iPhone, iPod and ensures it's not a Windows Phone
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
 };
 
 export const getOrders = async (): Promise<Order[]> => {
