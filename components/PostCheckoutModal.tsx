@@ -21,7 +21,7 @@ const PostCheckoutModal: React.FC = () => {
   const title = isIosDevice ? "Ação Necessária no WhatsApp" : "Pedido Quase Enviado!";
   const message = isIosDevice 
     ? "Seu pedido foi preparado. Para finalizar, <strong>vá para o WhatsApp e pressione ENVIAR</strong> na mensagem que preparamos para você."
-    : "Sua mensagem de pedido está pronta no WhatsApp. <strong>Confirme o envio</strong> para finalizar a compra.";
+    : "Sua mensagem de pedido está pronta no WhatsApp. <strong>Confirme o envio</strong> para abrir o WhatsApp e finalizar a compra.";
 
 
   return (
