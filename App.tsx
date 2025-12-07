@@ -9,6 +9,7 @@ import { useCart } from './context/CartContext';
 import PostCheckoutModal from './components/PostCheckoutModal';
 import CheckoutEmailModal from './components/CheckoutEmailModal';
 import AdminLogin from './components/AdminLogin';
+import { supabase } from './lib/supabaseClient';
 
 const HomePage = () => (
   <>
@@ -23,14 +24,27 @@ function App() {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
   useEffect(() => {
+    // Check active session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAdminAuthenticated(!!session);
+    });
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAdminAuthenticated(!!session);
+    });
+
     if (isCartOpen) {
       document.body.classList.add('cart-open');
     } else {
       document.body.classList.remove('cart-open');
     }
-    // Cleanup on component unmount
+
     return () => {
       document.body.classList.remove('cart-open');
+      subscription.unsubscribe();
     };
   }, [isCartOpen]);
 
