@@ -66,3 +66,9 @@ export interface CartContextType {
   closeEmailModal: () => void;
   handleFinalCheckout: (customer: Customer) => void;
 }
+
+export interface PopupConfig {
+  text: string;
+  expiresAt: string | null;
+  active: boolean;
+}

@@ -10,6 +10,7 @@ import PostCheckoutModal from './components/PostCheckoutModal';
 import CheckoutEmailModal from './components/CheckoutEmailModal';
 import AdminLogin from './components/AdminLogin';
 import { supabase } from './lib/supabaseClient';
+import StartupPopup from './components/StartupPopup';
 
 const HomePage = () => (
   <>
@@ -84,6 +85,7 @@ function App() {
       <Cart />
       {isEmailModalOpen && <CheckoutEmailModal />}
       {showPostCheckoutModal && <PostCheckoutModal />}
+      <StartupPopup />
     </div>
   );
 }

@@ -78,7 +78,7 @@ export const addOrder = async (items: CartItem[], customer: Customer, totalPrice
     if (fetchError) {
       console.error("Erro ao verificar cliente existente:", fetchError);
     }
-    
+
     const customerStatus = (!existingOrders || existingOrders.length === 0) ? 'pending' : 'registered';
 
     const newOrder = {
@@ -93,7 +93,7 @@ export const addOrder = async (items: CartItem[], customer: Customer, totalPrice
     };
 
     const { error: insertError } = await supabase.from('orders').insert(newOrder);
-    
+
     if (insertError) {
       console.error("Erro ao salvar pedido no Supabase:", insertError);
       throw insertError;
@@ -110,13 +110,13 @@ export const updateOrder = async (updatedOrder: Order): Promise<void> => {
   try {
     const { error } = await supabase
       .from('orders')
-      .update({ 
-          status: updatedOrder.status, 
-          observation: updatedOrder.observation,
-          customerStatus: updatedOrder.customerStatus,
+      .update({
+        status: updatedOrder.status,
+        observation: updatedOrder.observation,
+        customerStatus: updatedOrder.customerStatus,
       })
       .eq('id', updatedOrder.id);
-      
+
     if (error) {
       console.error("Erro ao atualizar pedido:", error);
       throw error;
@@ -132,13 +132,48 @@ export const deleteOrder = async (orderId: string): Promise<void> => {
       .from('orders')
       .delete()
       .eq('id', orderId);
-      
+
     if (error) {
       console.error("Erro ao deletar pedido:", error);
       throw error;
     }
   } catch (error) {
     console.error("Falha ao deletar pedido no Supabase", error);
+    throw error;
+  }
+};
+
+export const getPopupConfig = async (): Promise<import('./types').PopupConfig | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'popup_config')
+      .single();
+
+    if (error) {
+      console.error("Erro ao buscar configurações do popup:", error);
+      return null;
+    }
+    return data?.value || null;
+  } catch (error) {
+    console.error("Falha ao buscar configurações do popup", error);
+    return null;
+  }
+};
+
+export const updatePopupConfig = async (config: import('./types').PopupConfig): Promise<void> => {
+  try {
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ key: 'popup_config', value: config });
+
+    if (error) {
+      console.error("Erro ao atualizar configurações do popup:", error);
+      throw error;
+    }
+  } catch (error) {
+    console.error("Falha ao atualizar configurações do popup", error);
     throw error;
   }
 };
