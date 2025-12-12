@@ -109,7 +109,15 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (isClearOperation) {
         // Clear all promos
         updates = currentProducts.map(p => ({
-          ...p,
+          id: p.id,
+          name: p.name,
+          price: p.price,
+          category: p.category,
+          imageUrl: p.imageUrl,
+          quantityInfo: p.quantityInfo,
+          action: p.action,
+          indication: p.indication,
+          visibility: p.visibility,
           promoPrice: null,
           promoStartDate: null,
           promoEndDate: null
@@ -117,32 +125,87 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
       } else if (discountPercent !== null) {
         // Apply discount to all
         updates = currentProducts.map(p => ({
-          ...p,
+          id: p.id,
+          name: p.name,
+          price: p.price,
+          category: p.category,
+          imageUrl: p.imageUrl,
+          quantityInfo: p.quantityInfo,
+          action: p.action,
+          indication: p.indication,
+          visibility: p.visibility,
           promoPrice: p.price * (1 - discountPercent / 100),
           promoStartDate: startDate,
           promoEndDate: endDate
         }));
       } else {
         // Just update dates (preserve existing promo prices if any, or just set dates)
-        // Note: If a product didn't have a promoPrice, setting dates won't activate it (checked by isPromoActive)
         updates = currentProducts.map(p => ({
-          ...p,
+          id: p.id,
+          name: p.name,
+          price: p.price,
+          category: p.category,
+          imageUrl: p.imageUrl,
+          quantityInfo: p.quantityInfo,
+          action: p.action,
+          indication: p.indication,
+          visibility: p.visibility,
+          promoPrice: p.promoPrice,
           promoStartDate: startDate,
           promoEndDate: endDate
         }));
       }
 
-      // 3. Perform Bulk Upsert
-      const { data, error: updateError } = await supabase
-        .from('products')
-        .upsert(updates)
-        .select();
+      console.log('🔍 Bulk Promotion Debug:', {
+        discountPercent,
+        startDate,
+        endDate,
+        totalProducts: currentProducts.length
+      });
 
-      if (updateError) throw updateError;
+      // 3. Update each product individually to avoid GENERATED ALWAYS column issues
+      const updatePromises = currentProducts.map(async (p) => {
+        const updateData: any = {
+          name: p.name,
+          price: p.price,
+          category: p.category,
+          imageUrl: p.imageUrl,
+          quantityInfo: p.quantityInfo,
+          action: p.action,
+          indication: p.indication,
+          visibility: p.visibility,
+        };
+
+        if (isClearOperation) {
+          updateData.promoPrice = null;
+          updateData.promoStartDate = null;
+          updateData.promoEndDate = null;
+        } else if (discountPercent !== null) {
+          updateData.promoPrice = p.price * (1 - discountPercent / 100);
+          updateData.promoStartDate = startDate;
+          updateData.promoEndDate = endDate;
+        } else {
+          updateData.promoPrice = p.promoPrice;
+          updateData.promoStartDate = startDate;
+          updateData.promoEndDate = endDate;
+        }
+
+        const { error } = await supabase
+          .from('products')
+          .update(updateData)
+          .eq('id', p.id);
+
+        if (error) throw error;
+        return { ...p, ...updateData };
+      });
+
+      const updatedProducts = await Promise.all(updatePromises);
+
+      console.log('✅ Bulk promotion applied to', updatedProducts.length, 'products');
 
       // 4. Update local state
-      if (data) {
-        setProducts(data.sort((a, b) => a.name.localeCompare(b.name)));
+      if (updatedProducts) {
+        setProducts(updatedProducts.sort((a, b) => a.name.localeCompare(b.name)));
       }
     } catch (err: any) {
       console.error('Erro na promoção em massa:', err);
