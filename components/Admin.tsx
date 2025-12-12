@@ -5,6 +5,7 @@ import EditIcon from './icons/EditIcon';
 import TrashIcon from './icons/TrashIcon';
 import CloseIcon from './icons/CloseIcon';
 import { formatCurrency, getOrders, updateOrder, deleteOrder, isPromoActive, getPopupConfig, updatePopupConfig } from '../utils';
+import ConfirmModal from './ConfirmModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -192,6 +193,7 @@ const initialFormState: NewProduct = {
   name: '',
   price: 0,
   promoPrice: 0,
+  promoStartDate: '',
   promoEndDate: '',
   category: 'Fórmulas Magistrais Chinesas',
   imageUrl: '',
@@ -235,6 +237,32 @@ const Admin: React.FC = () => {
   // Popup Settings State
   const [popupConfig, setPopupConfig] = useState<PopupConfig>({ text: '', expiresAt: null, active: false });
   const [popupLoading, setPopupLoading] = useState(false);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [ordersPerPage] = useState(20);
+
+  // Confirm Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: React.ReactNode;
+    onConfirm: () => void;
+    isDangerous: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: null,
+    onConfirm: () => { },
+    isDangerous: false,
+  });
+
+  // Bulk Promotion State
+  const { applyBulkPromotion } = useProducts();
+  const [bulkDiscount, setBulkDiscount] = useState<number | ''>('');
+  const [bulkStartDate, setBulkStartDate] = useState('');
+  const [bulkEndDate, setBulkEndDate] = useState('');
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
 
   const observationUpdateTimers = useRef<{ [key: string]: number }>({});
 
@@ -280,6 +308,7 @@ const Admin: React.FC = () => {
         name: isEditing.name,
         price: isEditing.price,
         promoPrice: isEditing.promoPrice || 0,
+        promoStartDate: isEditing.promoStartDate ? isEditing.promoStartDate.split('T')[0] : '',
         promoEndDate: isEditing.promoEndDate ? isEditing.promoEndDate.split('T')[0] : '',
         category: isEditing.category,
         imageUrl: isEditing.imageUrl,
@@ -343,6 +372,7 @@ const Admin: React.FC = () => {
       ...formData,
       name: formData.name.toUpperCase(),
       promoPrice: formData.promoPrice && formData.promoPrice > 0 ? formData.promoPrice : null,
+      promoStartDate: formData.promoStartDate || null,
       promoEndDate: formData.promoEndDate || null,
     };
 
@@ -420,8 +450,8 @@ const Admin: React.FC = () => {
       setSuccessMessage('Pedido excluído com sucesso!');
       setIsDeleteModalOpen(false);
       setOrderToDelete(null);
-    } catch (error) {
-      setDeleteError('Falha ao excluir o pedido.');
+    } catch (error: any) {
+      setDeleteError(error.message || 'Falha ao excluir o pedido.');
     }
   };
 
@@ -620,6 +650,64 @@ ${itemsText}
     }
   };
 
+  const handleApplyBulkPromotion = async () => {
+    if (!bulkStartDate || !bulkEndDate) {
+      alert('Por favor, defina as datas de início e fim para a promoção em massa.');
+      return;
+    }
+
+    const discount = bulkDiscount === '' ? null : Number(bulkDiscount);
+    if (discount !== null && (discount <= 0 || discount >= 100)) {
+      alert('O desconto deve ser entre greater than 0 e menor que 100.');
+      return;
+    }
+
+    setConfirmModal({
+      isOpen: true,
+      title: 'Aplicar Promoção em Massa',
+      message: (
+        <div>
+          <p>Tem certeza que deseja aplicar esta promoção para <strong>TODOS</strong> os produtos?</p>
+          <p className="mt-2 text-sm text-gray-500">Isso sobrescreverá quaisquer promoções existentes.</p>
+        </div>
+      ),
+      isDangerous: false,
+      onConfirm: async () => {
+        setIsBulkProcessing(true);
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        await applyBulkPromotion(discount, bulkStartDate, bulkEndDate);
+        setIsBulkProcessing(false);
+        setSuccessMessage('Promoção em massa aplicada com sucesso!');
+      },
+    });
+  };
+
+  const handleClearAllPromotions = async () => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Limpar Todas as Promoções',
+      message: (
+        <div>
+          <p>Tem certeza que deseja <strong>REMOVER</strong> todas as promoções de todos os produtos?</p>
+          <p className="mt-2 text-sm text-gray-500">Esta ação não pode ser desfeita.</p>
+        </div>
+      ),
+      isDangerous: true,
+      onConfirm: async () => {
+        setIsBulkProcessing(true);
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        await applyBulkPromotion(null, null, null);
+        setIsBulkProcessing(false);
+        setSuccessMessage('Todas as promoções foram removidas com sucesso!');
+      },
+    });
+  };
+
+  // Helper to close modal
+  const closeConfirmModal = () => {
+    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+  };
+
   const productCategories = useMemo(() => ['all', ...new Set(products.map(p => p.category))], [products]);
 
   const filteredProducts = useMemo(() => {
@@ -631,8 +719,25 @@ ${itemsText}
     });
   }, [products, productSearchTerm, productFilterCategory, productFilterVisibility]);
 
+  // Pagination Logic
+  const indexOfLastOrder = currentPage * ordersPerPage;
+  const indexOfFirstOrder = indexOfLastOrder - ordersPerPage;
+  const currentOrders = filteredOrders.slice(indexOfFirstOrder, indexOfLastOrder);
+  const totalPages = Math.ceil(filteredOrders.length / ordersPerPage);
+
+  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
+
   return (
     <div className="space-y-8">
+      {/* Confirm Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={closeConfirmModal}
+        isDangerous={confirmModal.isDangerous}
+      />
       <div>
         <h1 className="text-3xl font-bold text-primary-900 mb-2">Painel do Administrador</h1>
         <p className="text-gray-600">Gerencie os produtos e pedidos da sua loja.</p>
@@ -702,6 +807,71 @@ ${itemsText}
             {popupLoading ? 'Salvando...' : 'Salvar Configuração'}
           </button>
         </form>
+      </div>
+
+      {/* Bulk Promotion Management */}
+      <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 mt-8">
+        <h2 className="text-2xl font-bold text-gray-800 mb-4">Gerenciamento de Promoção em Massa</h2>
+        <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+          <p className="text-sm text-green-800 mb-4">
+            Configure uma promoção para <strong>TODOS</strong> os produtos de uma só vez.
+            Você pode aplicar um desconto percentual ou apenas definir as datas de vigência (para produtos que já tenham preços promocionais definidos individualmente).
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+              <label htmlFor="bulkDiscount" className="block text-sm font-medium text-green-800 mb-1">Desconto Geral (%)</label>
+              <input
+                type="number"
+                id="bulkDiscount"
+                value={bulkDiscount}
+                onChange={e => setBulkDiscount(e.target.value === '' ? '' : Number(e.target.value))}
+                className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white"
+                placeholder="Ex: 10"
+                min="1"
+                max="99"
+              />
+              <p className="text-xs text-green-600 mt-1">Opcional. Se vazio, apenas as datas serão atualizadas.</p>
+            </div>
+            <div>
+              <label htmlFor="bulkStartDate" className="block text-sm font-medium text-green-800 mb-1">Início da Promoção</label>
+              <input
+                type="date"
+                id="bulkStartDate"
+                value={bulkStartDate}
+                onChange={e => setBulkStartDate(e.target.value)}
+                className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white"
+              />
+            </div>
+            <div>
+              <label htmlFor="bulkEndDate" className="block text-sm font-medium text-green-800 mb-1">Fim da Promoção</label>
+              <input
+                type="date"
+                id="bulkEndDate"
+                value={bulkEndDate}
+                onChange={e => setBulkEndDate(e.target.value)}
+                className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleApplyBulkPromotion}
+                disabled={isBulkProcessing || !bulkStartDate || !bulkEndDate}
+                className="bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed w-full"
+              >
+                {isBulkProcessing ? 'Aplicando...' : 'Aplicar Promoção'}
+              </button>
+            </div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-green-200 flex justify-end">
+            <button
+              onClick={handleClearAllPromotions}
+              disabled={isBulkProcessing}
+              className="text-red-600 hover:text-red-800 text-sm font-semibold hover:underline bg-transparent"
+            >
+              Limpar promoções de TODOS os produtos
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Orders Report */}
@@ -780,8 +950,8 @@ ${itemsText}
               </tr>
             </thead>
             <tbody>
-              {filteredOrders.length > 0 ? (
-                filteredOrders.map(order => {
+              {currentOrders.length > 0 ? (
+                currentOrders.map(order => {
                   const isDuplicate = duplicateOrderIds.has(order.id);
 
                   return (
@@ -868,6 +1038,48 @@ ${itemsText}
             )}
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="flex justify-between items-center mt-4 px-2">
+            <div className="text-sm text-gray-700">
+              Mostrando <span className="font-medium">{indexOfFirstOrder + 1}</span> até <span className="font-medium">{Math.min(indexOfLastOrder, filteredOrders.length)}</span> de <span className="font-medium">{filteredOrders.length}</span> pedidos
+            </div>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => paginate(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+              >
+                Anterior
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === totalPages || (p >= currentPage - 1 && p <= currentPage + 1))
+                .map((number, i, arr) => (
+                  <React.Fragment key={number}>
+                    {i > 0 && number > arr[i - 1] + 1 && <span className="px-2 text-gray-500">...</span>}
+                    <button
+                      onClick={() => paginate(number)}
+                      className={`px-3 py-1 border rounded-md text-sm font-medium ${currentPage === number
+                          ? 'bg-primary-600 text-white border-primary-600'
+                          : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                        }`}
+                    >
+                      {number}
+                    </button>
+                  </React.Fragment>
+                ))
+              }
+              <button
+                onClick={() => paginate(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+              >
+                Próxima
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Product Form */}
@@ -899,14 +1111,45 @@ ${itemsText}
               <input type="url" name="imageUrl" id="imageUrl" value={formData.imageUrl} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.imageUrl ? errorInputClass : 'border-gray-300'}`} placeholder="https://exemplo.com/imagem.jpg" />
               {formErrors.imageUrl && <p className={errorTextClass}>{formErrors.imageUrl}</p>}
             </div>
-            <div className="md:col-span-2 p-4 bg-primary-50 rounded-lg border border-primary-200 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-              <div>
-                <label htmlFor="promoPrice" className="block text-sm font-medium text-primary-800 mb-1">Preço Promocional (R$)</label>
-                <input type="number" name="promoPrice" id="promoPrice" value={formData.promoPrice || ''} onChange={handleInputChange} className={`${baseInputClass}`} step="0.01" min="0" placeholder="Deixe 0 para não aplicar" />
-              </div>
-              <div>
-                <label htmlFor="promoEndDate" className="block text-sm font-medium text-primary-800 mb-1">Data de Validade da Promoção</label>
-                <input type="date" name="promoEndDate" id="promoEndDate" value={formData.promoEndDate || ''} onChange={handleInputChange} className={`${baseInputClass}`} />
+            <div className="md:col-span-2 p-4 bg-green-50 rounded-lg border border-green-200">
+              <h3 className="font-semibold text-green-800 mb-3 block">Configurações de Promoção</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label htmlFor="promoPrice" className="block text-sm font-medium text-green-800 mb-1">Preço Promocional (R$)</label>
+                  <input
+                    type="number"
+                    name="promoPrice"
+                    id="promoPrice"
+                    value={formData.promoPrice === 0 ? '' : formData.promoPrice || ''}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="promoStartDate" className="block text-sm font-medium text-green-800 mb-1">Início da Promoção</label>
+                  <input
+                    type="date"
+                    name="promoStartDate"
+                    id="promoStartDate"
+                    value={formData.promoStartDate || ''}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="promoEndDate" className="block text-sm font-medium text-green-800 mb-1">Fim da Promoção</label>
+                  <input
+                    type="date"
+                    name="promoEndDate"
+                    id="promoEndDate"
+                    value={formData.promoEndDate || ''}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white"
+                  />
+                </div>
               </div>
             </div>
             <div className="md:col-span-2">

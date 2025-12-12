@@ -9,12 +9,33 @@ export const isPromoActive = (product: Product): boolean => {
   if (!product.promoPrice || product.promoPrice <= 0 || !product.promoEndDate) {
     return false;
   }
-  const promoEnd = new Date(product.promoEndDate);
+
   const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Check start date if it exists
+  if (product.promoStartDate) {
+    const promoStart = new Date(product.promoStartDate);
+    // promoStart should be at the beginning of the day (effectively 00:00)
+    // We compare just dates. If today < promoStart, it's not active yet.
+    // Note: new Date('YYYY-MM-DD') creates date at UTC. 
+    // If we want to be safe with local time comparisons, let's treat inputs carefully.
+    // Assuming inputs are "YYYY-MM-DD" strings.
+
+    // Simple comparison:
+    const startParts = product.promoStartDate.split('-');
+    const startDate = new Date(Number(startParts[0]), Number(startParts[1]) - 1, Number(startParts[2]));
+    startDate.setHours(0, 0, 0, 0);
+
+    if (today < startDate) {
+      return false;
+    }
+  }
+
+  const promoEnd = new Date(product.promoEndDate);
   // The promo is valid until the end of the selected day.
   promoEnd.setUTCHours(23, 59, 59, 999);
-  // Ensure we compare just the date part by setting today's time to the start.
-  today.setHours(0, 0, 0, 0);
+
   return promoEnd >= today;
 };
 
@@ -128,14 +149,18 @@ export const updateOrder = async (updatedOrder: Order): Promise<void> => {
 
 export const deleteOrder = async (orderId: string): Promise<void> => {
   try {
-    const { error } = await supabase
+    const { error, count } = await supabase
       .from('orders')
-      .delete()
+      .delete({ count: 'exact' })
       .eq('id', orderId);
 
     if (error) {
       console.error("Erro ao deletar pedido:", error);
       throw error;
+    }
+
+    if (count === 0) {
+      throw new Error("Nenhum registro foi removido. O pedido pode não existir ou você não tem permissão.");
     }
   } catch (error) {
     console.error("Falha ao deletar pedido no Supabase", error);

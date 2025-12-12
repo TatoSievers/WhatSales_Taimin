@@ -4,6 +4,7 @@ export interface Product {
   name: string;
   price: number;
   promoPrice?: number | null;
+  promoStartDate?: string | null;
   promoEndDate?: string | null;
   imageUrl: string;
   category: string;
@@ -41,6 +42,7 @@ export interface ProductContextType {
   addProduct: (product: NewProduct) => Promise<void>;
   updateProduct: (productId: number, updates: Partial<Omit<Product, 'id'>>) => Promise<void>;
   deleteProduct: (productId: number) => Promise<void>;
+  applyBulkPromotion: (discountPercent: number | null, startDate: string | null, endDate: string | null) => Promise<void>;
   loading: boolean;
   error: string | null;
 }
