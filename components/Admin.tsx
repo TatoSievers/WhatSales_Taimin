@@ -304,6 +304,7 @@ const Admin: React.FC = () => {
 
   useEffect(() => {
     if (isEditing) {
+
       setFormData({
         name: isEditing.name,
         price: isEditing.price,
@@ -810,69 +811,68 @@ ${itemsText}
       </div>
 
       {/* Bulk Promotion Management */}
-      <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 mt-8">
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">Gerenciamento de Promoção em Massa</h2>
-        <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-          <p className="text-sm text-green-800 mb-4">
-            Configure uma promoção para <strong>TODOS</strong> os produtos de uma só vez.
-            Você pode aplicar um desconto percentual ou apenas definir as datas de vigência (para produtos que já tenham preços promocionais definidos individualmente).
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-            <div>
-              <label htmlFor="bulkDiscount" className="block text-sm font-medium text-green-800 mb-1">Desconto Geral (%)</label>
-              <input
-                type="number"
-                id="bulkDiscount"
-                value={bulkDiscount}
-                onChange={e => setBulkDiscount(e.target.value === '' ? '' : Number(e.target.value))}
-                className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white"
-                placeholder="Ex: 10"
-                min="1"
-                max="99"
-              />
-              <p className="text-xs text-green-600 mt-1">Opcional. Se vazio, apenas as datas serão atualizadas.</p>
+      {/* <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 mb-8">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4">Gerenciamento de Promoção em Massa</h2>
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+            <p className="text-gray-700 mb-4">
+              Configure uma promoção para <strong>TODOS</strong> os produtos de uma só vez. Você pode aplicar um desconto percentual ou apenas definir as datas de vigência (para produtos que já tenham preços promocionais definidos individualmente).
+            </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end mb-4">
+              <div>
+                <label className="block text-sm font-medium text-green-800 mb-1">Desconto Geral (%)</label>
+                <input
+                  type="number"
+                  placeholder="Ex: 10"
+                  value={bulkDiscount}
+                  onChange={e => setBulkDiscount(e.target.value)}
+                  className="w-full px-3 py-2 border border-green-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white"
+                />
+                <p className="text-xs text-green-600 mt-1">Opcional. Se vazio, apenas as datas serão atualizadas.</p>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-green-800 mb-1">Início da Promoção</label>
+                <input
+                  type="date"
+                  value={bulkStartDate}
+                  onChange={e => setBulkStartDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-green-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-green-800 mb-1">Fim da Promoção</label>
+                <input
+                  type="date"
+                  value={bulkEndDate}
+                  onChange={e => setBulkEndDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-green-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white"
+                  // Let's store as full ISO for consistency with other dates, but input type="date" gives YYYY-MM-DD.
+                />
+              </div>
+              
+              <div>
+                <button
+                  onClick={handleApplyBulkPromotion}
+                  disabled={isBulkProcessing}
+                  className="w-full py-2 px-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-md shadow-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:bg-green-300 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isBulkProcessing ? 'Aplicando...' : 'Aplicar Promoção'}
+                </button>
+              </div>
             </div>
-            <div>
-              <label htmlFor="bulkStartDate" className="block text-sm font-medium text-green-800 mb-1">Início da Promoção</label>
-              <input
-                type="date"
-                id="bulkStartDate"
-                value={bulkStartDate}
-                onChange={e => setBulkStartDate(e.target.value)}
-                className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white"
-              />
-            </div>
-            <div>
-              <label htmlFor="bulkEndDate" className="block text-sm font-medium text-green-800 mb-1">Fim da Promoção</label>
-              <input
-                type="date"
-                id="bulkEndDate"
-                value={bulkEndDate}
-                onChange={e => setBulkEndDate(e.target.value)}
-                className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={handleApplyBulkPromotion}
-                disabled={isBulkProcessing || !bulkStartDate || !bulkEndDate}
-                className="bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed w-full"
-              >
-                {isBulkProcessing ? 'Aplicando...' : 'Aplicar Promoção'}
-              </button>
+            
+            <div className="flex justify-end pt-2 border-t border-green-100">
+               <button
+                  onClick={handleClearAllPromotions}
+                  className="text-red-600 hover:text-red-800 text-sm font-bold transition-colors"
+                >
+                  Limpar promoções de TODOS os produtos
+                </button>
             </div>
           </div>
-          <div className="mt-4 pt-4 border-t border-green-200 flex justify-end">
-            <button
-              onClick={handleClearAllPromotions}
-              disabled={isBulkProcessing}
-              className="text-red-600 hover:text-red-800 text-sm font-semibold hover:underline bg-transparent"
-            >
-              Limpar promoções de TODOS os produtos
-            </button>
-          </div>
-        </div>
-      </div>
+        </div> */}
 
       {/* Orders Report */}
       <div className="mt-12">
@@ -1061,8 +1061,8 @@ ${itemsText}
                     <button
                       onClick={() => paginate(number)}
                       className={`px-3 py-1 border rounded-md text-sm font-medium ${currentPage === number
-                          ? 'bg-primary-600 text-white border-primary-600'
-                          : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                        ? 'bg-primary-600 text-white border-primary-600'
+                        : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
                         }`}
                     >
                       {number}
