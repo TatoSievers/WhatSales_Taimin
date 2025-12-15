@@ -6,6 +6,11 @@ export const formatCurrency = (value: number): string => {
 };
 
 export const isPromoActive = (product: Product): boolean => {
+  // A promotion is active if:  // 1. promoPrice exists and is greater than 0
+  // 2. promoEndDate exists
+  // 3. (Optional) if promoStartDate exists, today must be >= promoStartDate
+  // 4. today must be <= promoEndDate
+
   if (!product.promoPrice || product.promoPrice <= 0 || !product.promoEndDate) {
     return false;
   }
@@ -15,15 +20,7 @@ export const isPromoActive = (product: Product): boolean => {
 
   // Check start date if it exists
   if (product.promoStartDate) {
-    const promoStart = new Date(product.promoStartDate);
-    // promoStart should be at the beginning of the day (effectively 00:00)
-    // We compare just dates. If today < promoStart, it's not active yet.
-    // Note: new Date('YYYY-MM-DD') creates date at UTC. 
-    // If we want to be safe with local time comparisons, let's treat inputs carefully.
-    // Assuming inputs are "YYYY-MM-DD" strings.
-
-    // Simple comparison:
-    const startParts = product.promoStartDate.split('-');
+    const startParts = product.promoStartDate.split('T')[0].split('-'); // Handle both 'YYYY-MM-DD' and 'YYYY-MM-DDTHH:MM:SS'
     const startDate = new Date(Number(startParts[0]), Number(startParts[1]) - 1, Number(startParts[2]));
     startDate.setHours(0, 0, 0, 0);
 
@@ -32,11 +29,12 @@ export const isPromoActive = (product: Product): boolean => {
     }
   }
 
-  const promoEnd = new Date(product.promoEndDate);
-  // The promo is valid until the end of the selected day.
-  promoEnd.setUTCHours(23, 59, 59, 999);
+  // Check end date - use local time consistently
+  const endParts = product.promoEndDate.split('T')[0].split('-');
+  const endDate = new Date(Number(endParts[0]), Number(endParts[1]) - 1, Number(endParts[2]));
+  endDate.setHours(23, 59, 59, 999);
 
-  return promoEnd >= today;
+  return endDate >= today;
 };
 
 export const getDosageForm = (productName: string): string | null => {
