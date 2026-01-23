@@ -12,6 +12,11 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL;
 const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
 
+console.log('--- Supabase Config Check ---');
+console.log('URL provided:', !!supabaseUrl);
+console.log('Key provided:', !!supabaseAnonKey);
+console.log('Mode:', (import.meta as any).env.MODE);
+
 let initializationError: string | null = null;
 let supabaseInstance: any;
 
