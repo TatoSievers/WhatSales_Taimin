@@ -16,25 +16,15 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onAuthSuccess }) => {
     setLoading(true);
     setError('');
 
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+    // Simple password check against environment variable
+    const adminPassword = (import.meta as any).env.VITE_ADMIN_PASSWORD;
 
-      if (error) {
-        throw error;
-      }
-
-      if (data.session) {
-        onAuthSuccess();
-      }
-    } catch (err: any) {
-      console.error('Login error:', err);
-      setError('Falha no login. Verifique suas credenciais.');
-    } finally {
-      setLoading(false);
+    if (password === adminPassword) {
+      onAuthSuccess();
+    } else {
+      setError('Senha incorreta.');
     }
+    setLoading(false);
   };
 
   return (

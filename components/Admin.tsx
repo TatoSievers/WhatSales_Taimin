@@ -9,7 +9,7 @@ import ConfirmModal from './ConfirmModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { Bar, Line, Pie } from 'react-chartjs-2';
+import { Bar, Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -17,13 +17,13 @@ import {
   BarElement,
   PointElement,
   LineElement,
-  ArcElement,
-  TimeScale,
   Title,
   Tooltip,
   Legend,
+  ChartData,
+  ChartOptions
 } from 'chart.js';
-import 'chartjs-adapter-date-fns';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
 // FIX: Switched to sub-path imports for date-fns to resolve module resolution errors. This is more robust and avoids potential issues with bundler configurations or package versions.
 // FIX: Corrected date-fns imports to use sub-paths to resolve module resolution errors.
 // FIX: Consolidating date-fns imports to avoid default export issues.
@@ -36,11 +36,10 @@ ChartJS.register(
   BarElement,
   PointElement,
   LineElement,
-  ArcElement,
-  TimeScale,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  ChartDataLabels
 );
 
 // --- DASHBOARD COMPONENTS --- //
@@ -78,18 +77,17 @@ const Dashboard = ({ orders, products }: { orders: Order[], products: Product[] 
   const today = new Date();
   const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-  const [startDate, setStartDate] = useState(firstDayOfMonth.toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(today.toISOString().split('T')[0]);
+  const [yearFilter, setYearFilter] = useState<'all' | string>(today.getFullYear().toString());
+  const [monthFilter, setMonthFilter] = useState<'all' | string>((today.getMonth() + 1).toString());
 
   const filteredOrders = useMemo(() => {
-    if (!startDate || !endDate) return orders;
-    const start = startOfDay(parseISO(startDate));
-    const end = endOfDay(parseISO(endDate));
     return orders.filter(order => {
       const orderDate = parseISO(order.date);
-      return orderDate >= start && orderDate <= end;
+      const yearMatches = yearFilter === 'all' || orderDate.getFullYear().toString() === yearFilter;
+      const monthMatches = monthFilter === 'all' || (orderDate.getMonth() + 1).toString() === monthFilter;
+      return yearMatches && monthMatches;
     });
-  }, [orders, startDate, endDate]);
+  }, [orders, yearFilter, monthFilter]);
 
   const kpiData = useMemo(() => {
     const totalRevenue = filteredOrders.reduce((sum, order) => sum + order.totalPrice, 0);
@@ -99,21 +97,69 @@ const Dashboard = ({ orders, products }: { orders: Order[], products: Product[] 
     return { totalRevenue, totalOrders, averageOrderValue, uniqueCustomers };
   }, [filteredOrders]);
 
+  const salesByMonth = useMemo(() => {
+    const monthlyData: Record<string, { total: number; count: number }> = {};
+    filteredOrders.forEach(order => {
+      const date = parseISO(order.date);
+      // Format: "MM/YYYY"
+      const key = `${date.getMonth() + 1}/${date.getFullYear()}`;
+      if (!monthlyData[key]) {
+        monthlyData[key] = { total: 0, count: 0 };
+      }
+      monthlyData[key].total += order.totalPrice;
+      monthlyData[key].count += 1;
+    });
+    // Sort by date components
+    return Object.entries(monthlyData).sort((a, b) => {
+      const partsA = a[0].split('/');
+      const partsB = b[0].split('/');
+      const mA = parseInt(partsA[0], 10);
+      const yA = parseInt(partsA[1], 10);
+      const mB = parseInt(partsB[0], 10);
+      const yB = parseInt(partsB[1], 10);
+      return new Date(yA, mA - 1).getTime() - new Date(yB, mB - 1).getTime();
+    });
+  }, [filteredOrders]);
+
   const chartData = useMemo(() => {
-    // Sales over Time
-    const salesByDay = filteredOrders.reduce((acc, order) => {
-      const day = startOfDay(parseISO(order.date)).toISOString();
-      acc[day] = (acc[day] || 0) + order.totalPrice;
-      return acc;
-    }, {} as Record<string, number>);
+    // 1. Sales Over Time (Line Chart)
+    const isAllTime = yearFilter === 'all';
 
-    const sortedDays = Object.keys(salesByDay).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    // Determine grouping key logic
+    let salesMap: Record<string, number> = {};
 
-    const salesOverTimeData = {
-      labels: sortedDays,
+    if (isAllTime) {
+      // Group by Month/Year (YYYY-MM) for sorting, label as MM/YYYY
+      salesMap = filteredOrders.reduce((acc, order) => {
+        const date = parseISO(order.date);
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        acc[key] = (acc[key] || 0) + order.totalPrice;
+        return acc;
+      }, {} as Record<string, number>);
+    } else {
+      // Group by Day (YYYY-MM-DD)
+      salesMap = filteredOrders.reduce((acc, order) => {
+        const day = order.date.split('T')[0];
+        acc[day] = (acc[day] || 0) + order.totalPrice;
+        return acc;
+      }, {} as Record<string, number>);
+    }
+
+    const sortedKeys = Object.keys(salesMap).sort();
+
+    const salesOverTimeData: ChartData<'line'> = {
+      labels: sortedKeys.map(key => {
+        if (isAllTime) {
+          const [y, m] = key.split('-');
+          return `${m}/${y}`;
+        } else {
+          const [y, m, d] = key.split('-');
+          return `${d}/${m}`;
+        }
+      }),
       datasets: [{
         label: 'Receita',
-        data: sortedDays.map(day => salesByDay[day]),
+        data: sortedKeys.map(key => salesMap[key] || 0),
         borderColor: '#15803d',
         backgroundColor: 'rgba(21, 128, 61, 0.1)',
         fill: true,
@@ -121,7 +167,7 @@ const Dashboard = ({ orders, products }: { orders: Order[], products: Product[] 
       }]
     };
 
-    // Top Selling Products
+    // 2. Top Products (Bar Chart - All Products)
     const productSales = filteredOrders
       .flatMap(o => o.items)
       .reduce((acc, item) => {
@@ -129,59 +175,227 @@ const Dashboard = ({ orders, products }: { orders: Order[], products: Product[] 
         return acc;
       }, {} as Record<string, number>);
 
-    const topProducts = Object.entries(productSales)
-      .sort(([, qtyA], [, qtyB]) => qtyB - qtyA)
-      .slice(0, 10);
+    const sortedProducts = Object.entries(productSales)
+      .sort(([, qtyA], [, qtyB]) => qtyB - qtyA);
+    // No slice - showing all relevant products
 
-    const topProductsData = {
-      labels: topProducts.map(([name]) => name),
+    const topProductsData: ChartData<'bar'> = {
+      labels: sortedProducts.map(([name]) => name),
       datasets: [{
         label: 'Unidades Vendidas',
-        data: topProducts.map(([, qty]) => qty),
+        data: sortedProducts.map(([, qty]) => qty),
         backgroundColor: '#22c55e',
         borderColor: '#16a34a',
         borderWidth: 1,
+        // Datalabels config specific for this dataset can go here or in options
       }]
     };
 
-    return { salesOverTimeData, topProductsData };
-  }, [filteredOrders, products]);
+    // 3. Top 10 Customers (Horizontal Bar Chart)
+    const customerSales = filteredOrders.reduce((acc, order) => {
+      const name = order.customer.name;
+      acc[name] = (acc[name] || 0) + order.totalPrice;
+      return acc;
+    }, {} as Record<string, number>);
 
-  const chartOptions = {
+    const topCustomers = Object.entries(customerSales)
+      .sort(([, valA], [, valB]) => valB - valA)
+      .slice(0, 10);
+
+    const topCustomersData: ChartData<'bar'> = {
+      labels: topCustomers.map(([name]) => name),
+      datasets: [{
+        label: 'Total Comprado (R$)',
+        data: topCustomers.map(([, val]) => val),
+        backgroundColor: '#3b82f6',
+        borderColor: '#2563eb',
+        borderWidth: 1,
+        datalabels: {
+          color: 'white',
+          anchor: 'end',
+          align: 'start', // Put it inside the bar at the end
+          formatter: (value) => formatCurrency(value as number),
+          font: {
+            weight: 'bold'
+          }
+        }
+      }]
+    };
+
+    // 4. KPI: Repurchase Rate
+    const customersWithOrders = filteredOrders.reduce((acc, order) => {
+      const cpf = order.customer.cpf;
+      acc[cpf] = (acc[cpf] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const totalUniqueCustomers = Object.keys(customersWithOrders).length;
+    const returningCustomers = Object.values(customersWithOrders).filter(count => count > 1).length;
+    const repurchaseRate = totalUniqueCustomers > 0
+      ? (returningCustomers / totalUniqueCustomers) * 100
+      : 0;
+
+    return { salesOverTimeData, topProductsData, topCustomersData, repurchaseRate };
+  }, [filteredOrders, yearFilter]);
+
+  const chartOptions: ChartOptions<'line' | 'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
-    plugins: { legend: { display: false } }
+    plugins: {
+      legend: { display: false },
+      datalabels: {
+        display: false, // Default off
+      }
+    }
+  };
+
+  const topProductsOptions: ChartOptions<'bar'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    indexAxis: 'y',
+    plugins: {
+      legend: { display: false },
+      datalabels: {
+        display: true,
+        color: 'black',
+        anchor: 'end',
+        align: 'end',
+        formatter: (value) => value
+      }
+    }
+  };
+
+  const topCustomersOptions: ChartOptions<'bar'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    indexAxis: 'y',
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (context) => formatCurrency(context.raw as number)
+        }
+      },
+      datalabels: {
+        display: true, // Enable for this chart
+      }
+    }
   };
 
   return (
     <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 mb-8">
       <h2 className="text-2xl font-bold text-gray-800 mb-4">Dashboard Gerencial</h2>
 
-      <div className="mb-6 p-4 bg-gray-50 rounded-md border border-gray-200 flex flex-col sm:flex-row items-center gap-4">
-        <label className="font-semibold text-gray-700">Filtrar por Período:</label>
-        <div className="flex items-center gap-2">
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-white" />
-          <span className="text-gray-600">até</span>
-          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-white" />
+      <div className="mb-6 p-4 bg-gray-50 rounded-md border border-gray-200 flex flex-col md:flex-row items-center justify-between gap-4">
+        <h3 className="text-lg font-semibold text-gray-700">Filtros de Data:</h3>
+        <div className="flex gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
+            <select
+              value={yearFilter}
+              onChange={(e) => setYearFilter(e.target.value)}
+              className="block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+            >
+              <option value="all">Todos</option>
+              <option value="2025">2025</option>
+              <option value="2026">2026</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
+            <select
+              value={monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value)}
+              className="block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+            >
+              <option value="all">Todos</option>
+              <option value="1">Janeiro</option>
+              <option value="2">Fevereiro</option>
+              <option value="3">Março</option>
+              <option value="4">Abril</option>
+              <option value="5">Maio</option>
+              <option value="6">Junho</option>
+              <option value="7">Julho</option>
+              <option value="8">Agosto</option>
+              <option value="9">Setembro</option>
+              <option value="10">Outubro</option>
+              <option value="11">Novembro</option>
+              <option value="12">Dezembro</option>
+            </select>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
         <KpiCard title="Receita Total" value={formatCurrency(kpiData.totalRevenue)} icon={<DollarSignIcon />} />
         <KpiCard title="Total de Pedidos" value={kpiData.totalOrders} icon={<ShoppingBagIcon />} />
         <KpiCard title="Ticket Médio" value={formatCurrency(kpiData.averageOrderValue)} icon={<DollarSignIcon />} />
         <KpiCard title="Clientes Únicos" value={kpiData.uniqueCustomers} icon={<UsersIcon />} />
+        <KpiCard
+          title="Taxa de Recompra"
+          value={`${chartData.repurchaseRate.toFixed(1)}%`}
+          icon={
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          }
+        />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 h-96">
+      {/* Top Section: Sales Over Time & Monthly List */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <div className="lg:col-span-2 bg-gray-50 p-4 rounded-lg border border-gray-200 h-96">
           <h3 className="text-lg font-semibold text-gray-700 mb-4">Vendas ao Longo do Tempo</h3>
-          <Line data={chartData.salesOverTimeData} options={{ ...chartOptions, scales: { x: { type: 'time', time: { unit: 'day', displayFormats: { day: 'dd/MM' } }, adapters: { date: { locale: ptBR } } } } }} />
+          <Line data={chartData.salesOverTimeData} options={chartOptions} />
         </div>
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 h-96 overflow-y-auto">
+          <h3 className="text-lg font-semibold text-gray-700 mb-4">Vendas por Mês</h3>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mês</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Vendas</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {salesByMonth.map(([key, data]) => (
+                <tr key={key}>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{key}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-right">
+                    <div className="font-medium">{formatCurrency(data.total)}</div>
+                    <div className="text-xs text-gray-500">{data.count} pedidos</div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Second Row: Top Products & Customers */}
+      <div className="grid grid-cols-1 gap-6">
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200" style={{ minHeight: '500px' }}>
+          <h3 className="text-lg font-semibold text-gray-700 mb-4">Todos os Produtos Mais Vendidos</h3>
+          <div className="h-[600px]">
+            <Bar data={chartData.topProductsData} options={topProductsOptions} />
+          </div>
+        </div>
+
         <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 h-96">
-          <h3 className="text-lg font-semibold text-gray-700 mb-4">Produtos Mais Vendidos</h3>
-          <Bar data={chartData.topProductsData} options={{ ...chartOptions, indexAxis: 'y' as const }} />
+          <h3 className="text-lg font-semibold text-gray-700 mb-4">Principais Clientes (Top 10)</h3>
+          <Bar data={chartData.topCustomersData} options={topCustomersOptions} />
         </div>
+      </div>
+
+      <div className="mt-8 p-6 bg-blue-50 rounded-lg border border-blue-200">
+        <h3 className="text-xl font-bold text-blue-800 mb-4">Sugestões de Dashboard Gerencial</h3>
+        <p className="text-blue-700 mb-2">Para uma análise mais profunda do seu negócio, considere os seguintes indicadores:</p>
+        <ul className="list-disc list-inside space-y-2 text-blue-800">
+          <li><strong>CAC (Custo de Aquisição de Cliente):</strong> Requer integração com dados de investimento em marketing.</li>
+          <li><strong>LTV (Lifetime Value):</strong> Valor médio que um cliente gasta durante todo o relacionamento com a loja.</li>
+          <li><strong>Análise de Cohort:</strong> Comportamento de compra de grupos de clientes ao longo do tempo (ex: retenção mensal).</li>
+          <li><strong>Taxa de Recompra:</strong> Porcentagem de clientes que fizeram mais de uma compra.</li>
+        </ul>
       </div>
     </div>
   );
@@ -530,9 +744,94 @@ const Admin: React.FC = () => {
 
   const exportToPDF = useCallback(() => {
     const doc = new jsPDF();
-    doc.text("Relatório de Pedidos - Taimin", 14, 16);
+    const today = new Date().toLocaleDateString('pt-BR');
 
-    const tableColumn = ["Data", "Cliente", "CPF", "Produto", "Qtd", "Preço Unit.", "Subtotal", "Status Venda"];
+    // Title
+    doc.setFontSize(18);
+    doc.text("Relatório Gerencial - Taimin", 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Gerado em: ${today}`, 14, 28);
+
+    let currentY = 35;
+
+    // --- KPIs Summary ---
+    const totalRevenue = filteredOrders.reduce((sum, order) => sum + order.totalPrice, 0);
+    const totalOrders = filteredOrders.length;
+    const averageTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+    doc.setFontSize(12);
+    doc.text("Resumo Geral", 14, currentY);
+    currentY += 10;
+
+    const kpiData = [
+      ["Receita Total", "Pedidos", "Ticket Médio"],
+      [formatCurrency(totalRevenue), totalOrders.toString(), formatCurrency(averageTicket)]
+    ];
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [kpiData[0]],
+      body: [kpiData[1]],
+      theme: 'plain',
+      styles: { fontSize: 12, fontStyle: 'bold', halign: 'center' },
+      headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0] },
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 15;
+
+    // --- Top Products ---
+    const productSales = filteredOrders
+      .flatMap(o => o.items)
+      .reduce((acc, item) => {
+        acc[item.name] = (acc[item.name] || 0) + item.quantity;
+        return acc;
+      }, {} as Record<string, number>);
+
+    const topProducts = Object.entries(productSales)
+      .sort((a, b) => (b[1] as number) - (a[1] as number))
+      .slice(0, 10);
+
+    doc.text("Top 10 Produtos Mais Vendidos", 14, currentY);
+    currentY += 5;
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [["Produto", "Qtd Vendida"]],
+      body: topProducts.map(([name, qty]) => [name, qty]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [34, 84, 61] },
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 15;
+
+    // --- Top Customers ---
+    const customerSales = filteredOrders.reduce((acc, order) => {
+      acc[order.customer.name] = (acc[order.customer.name] || 0) + order.totalPrice;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const topCustomers = Object.entries(customerSales)
+      .sort((a, b) => (b[1] as number) - (a[1] as number))
+      .slice(0, 10);
+
+    doc.text("Top 10 Clientes", 14, currentY);
+    currentY += 5;
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [["Cliente", "Total Comprado"]],
+      body: topCustomers.map(([name, val]) => [name, formatCurrency(val)]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [34, 84, 61] },
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 15;
+
+    // --- Detailed Orders ---
+    doc.text("Detalhamento de Pedidos", 14, currentY);
+    currentY += 5;
+
+    const tableColumn = ["Data", "Cliente", "CPF", "Produto", "Qtd", "Preço", "Subtotal", "Status"];
     const tableRows: any[][] = [];
 
     filteredOrders.forEach(order => {
@@ -545,21 +844,21 @@ const Admin: React.FC = () => {
           item.quantity,
           formatCurrency(item.price),
           formatCurrency(item.price * item.quantity),
-          order.status === 'completed' ? 'Concluída' : 'Aberto'
+          order.status === 'completed' ? 'Conc.' : 'Aber.'
         ];
         tableRows.push(rowData);
       });
     });
 
     autoTable(doc, {
+      startY: currentY,
       head: [tableColumn],
       body: tableRows,
-      startY: 20,
       styles: { fontSize: 8 },
-      headStyles: { fillColor: [34, 84, 61] }, // Cor primária
+      headStyles: { fillColor: [34, 84, 61] },
     });
 
-    doc.save('relatorio_pedidos_taimin.pdf');
+    doc.save('relatorio_gerencial_taimin.pdf');
   }, [filteredOrders]);
 
   const exportToExcel = useCallback(() => {
