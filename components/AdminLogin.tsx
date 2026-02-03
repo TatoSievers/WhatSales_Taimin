@@ -16,15 +16,34 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onAuthSuccess }) => {
     setLoading(true);
     setError('');
 
-    // Simple password check against environment variable
-    const adminPassword = (import.meta as any).env.VITE_ADMIN_PASSWORD;
+    try {
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (password === adminPassword) {
-      onAuthSuccess();
-    } else {
-      setError('Senha incorreta.');
+      if (authError) {
+        // If sign in fails, check if it's the fallback admin password
+        const adminPassword = (import.meta as any).env.VITE_ADMIN_PASSWORD;
+        if (password === adminPassword) {
+          // Fallback for legacy generic admin (Note: This won't fix RLS if RLS requires auth)
+          // But we keep it to not break existing behavior if Supabase Auth is down/not configured for this user
+          console.warn("Using fallback local admin password. RLS data might not load.");
+          onAuthSuccess();
+          return;
+        }
+        throw authError;
+      }
+
+      if (data.session) {
+        onAuthSuccess();
+      }
+    } catch (err: any) {
+      console.error("Login error:", err);
+      setError(err.message || 'Falha na autenticação.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
