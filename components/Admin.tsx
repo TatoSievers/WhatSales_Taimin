@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useProducts } from '../context/ProductContext';
-import { Product, NewProduct, Order, PopupConfig } from '../types';
+import { Product, NewProduct, Order, PopupConfig, WhatsappConfig } from '../types';
 import EditIcon from './icons/EditIcon';
 import TrashIcon from './icons/TrashIcon';
 import CloseIcon from './icons/CloseIcon';
-import { formatCurrency, getOrders, updateOrder, deleteOrder, isPromoActive, getPopupConfig, updatePopupConfig } from '../utils';
+import { formatCurrency, getOrders, updateOrder, deleteOrder, isPromoActive, getPopupConfig, updatePopupConfig, getWhatsappConfig, updateWhatsappConfig } from '../utils';
 import ConfirmModal from './ConfirmModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -447,10 +447,17 @@ const Admin: React.FC = () => {
   const [isTxtExportModalOpen, setIsTxtExportModalOpen] = useState(false);
   const [txtExportContent, setTxtExportContent] = useState('');
   const [copySuccess, setCopySuccess] = useState('');
-
   // Popup Settings State
   const [popupConfig, setPopupConfig] = useState<PopupConfig>({ text: '', expiresAt: null, active: false });
   const [popupLoading, setPopupLoading] = useState(false);
+
+  // WhatsApp Settings State
+  const [whatsappConfig, setWhatsappConfig] = useState<WhatsappConfig>({
+    whatsappNumber: '',
+    whatsappReceiverName: '',
+    whatsappMessageTemplate: ''
+  });
+  const [whatsappLoading, setWhatsappLoading] = useState(false);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -494,14 +501,36 @@ const Admin: React.FC = () => {
     setPopupLoading(false);
   }, []);
 
+  const fetchWhatsappConfig = useCallback(async () => {
+    setWhatsappLoading(true);
+    const config = await getWhatsappConfig();
+    if (config) {
+      setWhatsappConfig(config);
+    }
+    setWhatsappLoading(false);
+  }, []);
+
+  const handleSaveWhatsappConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setWhatsappLoading(true);
+    try {
+      await updateWhatsappConfig(whatsappConfig);
+      setSuccessMessage('Configurações do WhatsApp atualizadas com sucesso!');
+    } catch (error) {
+      alert('Erro ao salvar configuração do WhatsApp.');
+    } finally {
+      setWhatsappLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchOrders();
     fetchPopupConfig();
+    fetchWhatsappConfig();
     return () => {
       Object.values(observationUpdateTimers.current).forEach(clearTimeout);
     };
-  }, [fetchOrders]);
-
+  }, [fetchOrders, fetchPopupConfig, fetchWhatsappConfig]);
   useEffect(() => {
     if (successMessage) {
       const timer = setTimeout(() => setSuccessMessage(''), 4000);
@@ -831,7 +860,7 @@ const Admin: React.FC = () => {
     doc.text("Detalhamento de Pedidos", 14, currentY);
     currentY += 5;
 
-    const tableColumn = ["Data", "Cliente", "CPF", "Produto", "Qtd", "Preço", "Subtotal", "Status"];
+    const tableColumn = ["Data", "Cliente", "CPF", "Produto", "Qtd", "Preço", "Subtotal", "Status", "Atendente"];
     const tableRows: any[][] = [];
 
     filteredOrders.forEach(order => {
@@ -844,7 +873,8 @@ const Admin: React.FC = () => {
           item.quantity,
           formatCurrency(item.price),
           formatCurrency(item.price * item.quantity),
-          order.status === 'completed' ? 'Conc.' : 'Aber.'
+          order.status === 'completed' ? 'Conc.' : 'Aber.',
+          order.receivedBy || 'Samantha'
         ];
         tableRows.push(rowData);
       });
@@ -871,6 +901,7 @@ const Admin: React.FC = () => {
         'Email': order.customer.email,
         'Status Cadastro': order.customerStatus === 'registered' ? 'Realizado' : 'Pendente',
         'Status Venda': order.status === 'completed' ? 'Concluída' : 'Aberto',
+        'Atendente': order.receivedBy || 'Samantha',
         'Observação': order.observation,
         'ID Produto': item.id,
         'Produto': item.name,
@@ -894,8 +925,8 @@ const Admin: React.FC = () => {
     const headerKeys = Object.keys(flattenedData[0] || {});
     const colWidths = headerKeys.map(key => ({
       wch: Math.max(
-        key.length,
-        ...flattenedData.map(row => (row[key as keyof typeof row] || '').toString().length)
+          key.length,
+          ...flattenedData.map(row => (row[key as keyof typeof row] || '').toString().length)
       ) + 2
     }));
     worksheet['!cols'] = colWidths;
@@ -910,10 +941,12 @@ const Admin: React.FC = () => {
       const orderStatusText = order.status === 'completed' ? 'Concluída' : 'Aberto';
       const observationText = order.observation || 'Nenhuma';
       const orderDate = new Date(order.date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const receivedByText = order.receivedBy || 'Samantha';
 
       return `*Pedido de: ${order.customer.name}*
 *CPF:* ${order.customer.cpf}
 *Data:* ${orderDate}
+*Atendente:* ${receivedByText}
 
 *Itens do Pedido:*
 ${itemsText}
@@ -1109,7 +1142,69 @@ ${itemsText}
         </form>
       </div>
 
-      {/* Bulk Promotion Management */}
+      {/* Configuração do WhatsApp */}
+      <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+        <h2 className="text-2xl font-bold text-gray-800 mb-4">Configuração do WhatsApp de Vendas</h2>
+        <form onSubmit={handleSaveWhatsappConfig} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="whatsappReceiverName" className="block text-sm font-medium text-gray-700 mb-1">Nome do Recebedor (Atendente Padrão)</label>
+              <input
+                type="text"
+                id="whatsappReceiverName"
+                className={baseInputClass}
+                value={whatsappConfig.whatsappReceiverName}
+                onChange={e => setWhatsappConfig(prev => ({ ...prev, whatsappReceiverName: e.target.value }))}
+                placeholder="Ex: Samantha"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">Nome exibido como atendente responsável no relatório de pedidos.</p>
+            </div>
+            <div>
+              <label htmlFor="whatsappNumber" className="block text-sm font-medium text-gray-700 mb-1">Número do WhatsApp (com código do país)</label>
+              <input
+                type="text"
+                id="whatsappNumber"
+                className={baseInputClass}
+                value={whatsappConfig.whatsappNumber}
+                onChange={e => setWhatsappConfig(prev => ({ ...prev, whatsappNumber: e.target.value.replace(/\D/g, '') }))}
+                placeholder="Ex: 5511999999999"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">Número que receberá a mensagem de finalização do carrinho.</p>
+            </div>
+          </div>
+          <div>
+            <label htmlFor="whatsappMessageTemplate" className="block text-sm font-medium text-gray-700 mb-1">Modelo da Mensagem do Pedido</label>
+            <textarea
+              id="whatsappMessageTemplate"
+              rows={6}
+              className={baseInputClass}
+              value={whatsappConfig.whatsappMessageTemplate}
+              onChange={e => setWhatsappConfig(prev => ({ ...prev, whatsappMessageTemplate: e.target.value }))}
+              placeholder="Configure o texto da mensagem..."
+              required
+            />
+            <div className="mt-2 p-3 bg-gray-50 rounded text-xs text-gray-600 space-y-1">
+              <p className="font-bold">Variáveis disponíveis para substituição automática:</p>
+              <ul className="list-disc list-inside">
+                <li><code>{"{nome}"}</code> - Nome completo do cliente</li>
+                <li><code>{"{cpf}"}</code> - CPF do cliente</li>
+                <li><code>{"{itens}"}</code> - Lista de itens do pedido formatados</li>
+                <li><code>{"{total}"}</code> - Valor total do pedido</li>
+                <li><code>{"{mensagem_fechamento}"}</code> - Mensagem sobre cadastro pendente/realizado</li>
+              </ul>
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={whatsappLoading}
+            className="bg-primary-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-primary-700 transition-colors disabled:opacity-50"
+          >
+            {whatsappLoading ? 'Salvando...' : 'Salvar Configuração'}
+          </button>
+        </form>
+      </div>
       {/* <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 mb-8">
           <h2 className="text-2xl font-bold text-gray-800 mb-4">Gerenciamento de Promoção em Massa</h2>
           <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
@@ -1244,6 +1339,7 @@ ${itemsText}
                 <th scope="col" className="px-4 py-3 text-right">Valor Total</th>
                 <th scope="col" className="px-4 py-3 text-center">Status Cadastro</th>
                 <th scope="col" className="px-4 py-3 text-center">Status Venda</th>
+                <th scope="col" className="px-4 py-3">Atendente</th>
                 <th scope="col" className="px-4 py-3">Observação</th>
                 <th scope="col" className="px-4 py-3 text-center">Ações</th>
               </tr>
@@ -1297,6 +1393,15 @@ ${itemsText}
                       <td className="px-4 py-4">
                         <input
                           type="text"
+                          value={order.receivedBy || 'Samantha'}
+                          onChange={e => handleOrderUpdate(order.id, { receivedBy: e.target.value })}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-sm focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+                          placeholder="Samantha"
+                        />
+                      </td>
+                      <td className="px-4 py-4">
+                        <input
+                          type="text"
                           value={order.observation}
                           onChange={e => handleObservationChange(order.id, e.target.value)}
                           className="w-full bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-sm focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
@@ -1318,7 +1423,7 @@ ${itemsText}
                 })
               ) : (
                 <tr>
-                  <td colSpan={9} className="text-center text-gray-500 py-8">
+                  <td colSpan={10} className="text-center text-gray-500 py-8">
                     Nenhum pedido encontrado. Tente ajustar seus filtros.
                   </td>
                 </tr>
@@ -1331,7 +1436,7 @@ ${itemsText}
                   <td className="px-4 py-3 text-right text-gray-900">
                     {formatCurrency(filteredOrders.reduce((acc, order) => acc + order.totalPrice, 0))}
                   </td>
-                  <td colSpan={4}></td>
+                  <td colSpan={5}></td>
                 </tr>
               </tfoot>
             )}

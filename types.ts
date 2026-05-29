@@ -35,6 +35,7 @@ export interface Order {
   status: 'open' | 'completed';
   observation: string;
   customerStatus: 'pending' | 'registered';
+  receivedBy?: string;
 }
 
 export interface ProductContextType {
@@ -73,4 +74,10 @@ export interface PopupConfig {
   text: string;
   expiresAt: string | null;
   active: boolean;
+}
+
+export interface WhatsappConfig {
+  whatsappNumber: string;
+  whatsappMessageTemplate: string;
+  whatsappReceiverName: string;
 }

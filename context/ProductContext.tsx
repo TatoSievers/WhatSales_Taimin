@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useMemo, useCallback, useEffect } from 'react';
 import { Product, ProductContextType, NewProduct } from '../types';
 import { supabase, supabaseInitializationError } from '../lib/supabaseClient';
+import { mockProducts } from '../data/products';
 
 const ProductContext = createContext<ProductContextType | undefined>(undefined);
 
@@ -12,8 +13,8 @@ export const ProductProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const fetchProducts = useCallback(async () => {
     // Primeiro, verifica se houve um erro na inicialização do cliente Supabase.
     if (supabaseInitializationError) {
-      setError(supabaseInitializationError); // Usa a mensagem de erro específica.
-      setProducts([]);
+      console.warn("Supabase não configurado. Carregando produtos locais de demonstração (mock).");
+      setProducts(mockProducts);
       setLoading(false);
       return;
     }

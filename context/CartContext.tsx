@@ -1,9 +1,6 @@
-
 import React, { createContext, useState, useContext, useMemo, useCallback } from 'react';
 import { Product, CartItem, CartContextType, Customer } from '../types';
-import { WHATSAPP_NUMBER } from '../constants';
-import { formatCurrency, addOrder, isIOS } from '../utils';
-
+import { formatCurrency, addOrder, isIOS, getWhatsappConfig } from '../utils';
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
@@ -82,8 +79,13 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const handleFinalCheckout = useCallback(async (customer: Customer) => {
     const totalPriceValue = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
+    const whatsappConfig = await getWhatsappConfig();
+    const whatsappNum = whatsappConfig.whatsappNumber;
+    const receiverName = whatsappConfig.whatsappReceiverName;
+    const messageTemplate = whatsappConfig.whatsappMessageTemplate;
+
     // Save order to Supabase and get the customer's registration status
-    const { customerStatus } = await addOrder(cartItems, customer, totalPriceValue);
+    const { customerStatus } = await addOrder(cartItems, customer, totalPriceValue, receiverName);
     
     const itemsText = cartItems
       .map(
@@ -102,7 +104,7 @@ ${itemsText}
 
 **Total:** ${formatCurrency(totalPriceValue)}
 
-Para um atendimento mais rápido ou para tirar dúvidas, você pode nos contatar diretamente pelo WhatsApp: ${WHATSAPP_NUMBER}.
+Para um atendimento mais rápido ou para tirar dúvidas, você pode nos contatar diretamente pelo WhatsApp: ${whatsappNum}.
 
 Agradecemos a sua preferência.
 
@@ -122,14 +124,19 @@ Equipe Taimin`;
       ? 'Aguardo as instruções para cadastramento*, pagamento e entrega.\n*venda mediante aprovação de cadastro'
       : 'Cadastro válido, Aguardo as instruções para pagamento e entrega.';
 
-    const whatsappMessage = `Olá! Meu nome é ${customer.name} (CPF: ${customer.cpf}) e gostaria de fazer o seguinte pedido:\n\n${itemsText}\n\n*Total: ${formatCurrency(totalPriceValue)}*\n\n${closingMessage}`;
+    const whatsappMessage = messageTemplate
+      .replace(/{nome}/g, customer.name)
+      .replace(/{cpf}/g, customer.cpf)
+      .replace(/{itens}/g, itemsText)
+      .replace(/{total}/g, formatCurrency(totalPriceValue))
+      .replace(/{mensagem_fechamento}/g, closingMessage);
     
     closeEmailModal();
     
     if (isIOS()) {
       openPostCheckoutModal(whatsappMessage);
     } else {
-      const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(whatsappMessage)}`;
+      const url = `https://wa.me/${whatsappNum}?text=${encodeURIComponent(whatsappMessage)}`;
       window.open(url, '_blank');
       openPostCheckoutModal();
     }

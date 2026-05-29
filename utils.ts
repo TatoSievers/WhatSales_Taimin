@@ -1,5 +1,6 @@
-import { Order, CartItem, Customer, Product } from './types';
+import { Order, CartItem, Customer, Product, WhatsappConfig } from './types';
 import { supabase } from './lib/supabaseClient';
+import { WHATSAPP_NUMBER, WHATSAPP_RECEIVER_NAME, WHATSAPP_MESSAGE_TEMPLATE } from './constants';
 
 export const formatCurrency = (value: number): string => {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -78,6 +79,7 @@ export const getOrders = async (): Promise<Order[]> => {
       ...order,
       items: order.items || [],
       customer: order.customer || { name: '', email: '', cpf: '' },
+      receivedBy: order.receivedBy || 'Samantha', // Todos os antigos e padrão são Samantha
     })) as Order[];
   } catch (error) {
     console.error("Falha ao carregar pedidos do Supabase", error);
@@ -85,7 +87,7 @@ export const getOrders = async (): Promise<Order[]> => {
   }
 };
 
-export const addOrder = async (items: CartItem[], customer: Customer, totalPrice: number): Promise<{ customerStatus: 'pending' | 'registered' }> => {
+export const addOrder = async (items: CartItem[], customer: Customer, totalPrice: number, receivedBy?: string): Promise<{ customerStatus: 'pending' | 'registered' }> => {
   try {
     // Verifica se o cliente já existe baseado no CPF
     const { data: existingOrders, error: fetchError } = await supabase
@@ -109,6 +111,7 @@ export const addOrder = async (items: CartItem[], customer: Customer, totalPrice
       status: 'open',
       observation: '',
       customerStatus,
+      receivedBy: receivedBy || 'Samantha', // Salva o nome de quem está recebendo
     };
 
     const { error: insertError } = await supabase.from('orders').insert(newOrder);
@@ -133,6 +136,7 @@ export const updateOrder = async (updatedOrder: Order): Promise<void> => {
         status: updatedOrder.status,
         observation: updatedOrder.observation,
         customerStatus: updatedOrder.customerStatus,
+        receivedBy: updatedOrder.receivedBy || 'Samantha',
       })
       .eq('id', updatedOrder.id);
 
@@ -198,5 +202,61 @@ export const updatePopupConfig = async (config: import('./types').PopupConfig): 
   } catch (error) {
     console.error("Falha ao atualizar configurações do popup", error);
     throw error;
+  }
+};
+
+export const getWhatsappConfig = async (): Promise<WhatsappConfig> => {
+  try {
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'whatsapp_config')
+      .single();
+
+    if (!error && data?.value) {
+      return data.value;
+    }
+  } catch (err) {
+    console.error("Erro ao buscar config do WhatsApp do Supabase:", err);
+  }
+
+  // Fallback to localStorage
+  const localConfig = localStorage.getItem('whatsapp_config');
+  if (localConfig) {
+    try {
+      return JSON.parse(localConfig);
+    } catch (_) {}
+  }
+
+  // Fallback to constants.ts values
+  return {
+    whatsappNumber: WHATSAPP_NUMBER,
+    whatsappReceiverName: WHATSAPP_RECEIVER_NAME,
+    whatsappMessageTemplate: WHATSAPP_MESSAGE_TEMPLATE
+  };
+};
+
+export const updateWhatsappConfig = async (config: WhatsappConfig): Promise<void> => {
+  // Save to localStorage
+  localStorage.setItem('whatsapp_config', JSON.stringify(config));
+
+  // Save to Supabase (if online)
+  try {
+    await supabase
+      .from('app_settings')
+      .upsert({ key: 'whatsapp_config', value: config });
+  } catch (err) {
+    console.error("Erro ao salvar config do WhatsApp no Supabase:", err);
+  }
+
+  // Save to local file using Vite API (if running under Vite dev server)
+  try {
+    await fetch('/api/save-whatsapp-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    });
+  } catch (err) {
+    console.warn("Vite API not available to write file (running in production/standalone mode).");
   }
 };
