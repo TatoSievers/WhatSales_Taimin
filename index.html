@@ -4,6 +4,50 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Taimin - E-commerce de Medicina Chinesa</title>
+    <script>
+      // Diagnostic script to catch early errors before other scripts load
+      (function() {
+        var errors = [];
+        function showDiagnosticOverlay(title, msg, stack) {
+          var overlay = document.getElementById('diag-overlay');
+          if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'diag-overlay';
+            overlay.style.position = 'fixed';
+            overlay.style.top = '10px';
+            overlay.style.left = '10px';
+            overlay.style.right = '10px';
+            overlay.style.bottom = '10px';
+            overlay.style.background = '#fffbeb';
+            overlay.style.border = '3px solid #d97706';
+            overlay.style.color = '#78350f';
+            overlay.style.padding = '20px';
+            overlay.style.zIndex = '9999999';
+            overlay.style.overflow = 'auto';
+            overlay.style.fontFamily = 'monospace';
+            overlay.style.borderRadius = '8px';
+            overlay.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1)';
+            document.body.appendChild(overlay);
+          }
+          errors.push({ title: title, msg: msg, stack: stack });
+          overlay.innerHTML = '<h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 10px;">⚠️ Erro de Diagnóstico de Inicialização</h2>' +
+            errors.map(function(e) {
+              return '<div style="margin-bottom: 15px; border-bottom: 1px dashed #f59e0b; padding-bottom: 10px;">' +
+                '<strong>[' + e.title + ']</strong> ' + e.msg +
+                (e.stack ? '<pre style="background: #fef3c7; padding: 10px; margin-top: 5px; font-size: 0.8rem; overflow-x: auto;">' + e.stack + '</pre>' : '') +
+                '</div>';
+            }).join('') +
+            '<button onclick="window.location.reload()" style="background: #d97706; color: white; border: none; padding: 8px 16px; border-radius: 4px; pointer: cursor; font-weight: bold;">Recarregar</button>';
+        }
+
+        window.addEventListener('error', function(e) {
+          showDiagnosticOverlay('Uncaught Syntax/Runtime Error', e.message, e.error ? e.error.stack : (e.filename + ':' + e.lineno));
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+          showDiagnosticOverlay('Unhandled Promise Rejection', e.reason ? (e.reason.message || String(e.reason)) : 'Unknown rejection', e.reason ? e.reason.stack : null);
+        });
+      })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -35,26 +79,7 @@
         }
       }
     </script>
-  <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18.2.0",
-    "react/": "https://esm.sh/react@18.2.0/",
-    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-    "react-dom/": "https://esm.sh/react-dom@18.2.0/",
-    "jspdf": "https://esm.sh/jspdf@2.5.1",
-    "jspdf-autotable": "https://esm.sh/jspdf-autotable@3.8.2",
-    "xlsx": "https://esm.sh/xlsx@0.18.5",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
-    "chart.js": "https://esm.sh/chart.js@4.4.2",
-    "react-chartjs-2": "https://esm.sh/react-chartjs-2@5.2.0",
-    "date-fns": "https://esm.sh/date-fns@2.30.0",
-    "chartjs-adapter-date-fns": "https://esm.sh/chartjs-adapter-date-fns@3.0.0",
-    "date-fns/": "https://aistudiocdn.com/date-fns@^4.1.0/"
-  }
-}
-</script>
-<style>
+  <style>
   /* Lock body scroll when cart is open on mobile */
   @media (max-width: 1023px) {
     body.cart-open {
@@ -77,9 +102,10 @@
     width: 100%;
   }
 </style>
+<link rel="stylesheet" href="/index.css">
 </head>
   <body class="bg-gray-50">
     <div id="root"></div>
-    <script type="module" src="./index.tsx"></script>
-  </body>
+    <script type="module" src="/index.tsx"></script>
+</body>
 </html>

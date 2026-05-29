@@ -4,7 +4,6 @@ export interface Product {
   name: string;
   price: number;
   promoPrice?: number | null;
-  promoStartDate?: string | null;
   promoEndDate?: string | null;
   imageUrl: string;
   category: string;
@@ -24,6 +23,9 @@ export interface Customer {
   name: string;
   email: string;
   cpf: string;
+  phone?: string;
+  registro?: string;
+  profissao?: string;
 }
 
 export interface Order {
@@ -35,7 +37,6 @@ export interface Order {
   status: 'open' | 'completed';
   observation: string;
   customerStatus: 'pending' | 'registered';
-  receivedBy?: string;
 }
 
 export interface ProductContextType {
@@ -43,7 +44,6 @@ export interface ProductContextType {
   addProduct: (product: NewProduct) => Promise<void>;
   updateProduct: (productId: number, updates: Partial<Omit<Product, 'id'>>) => Promise<void>;
   deleteProduct: (productId: number) => Promise<void>;
-  applyBulkPromotion: (discountPercent: number | null, startDate: string | null, endDate: string | null) => Promise<void>;
   loading: boolean;
   error: string | null;
 }
@@ -68,16 +68,4 @@ export interface CartContextType {
   openEmailModal: () => void;
   closeEmailModal: () => void;
   handleFinalCheckout: (customer: Customer) => void;
-}
-
-export interface PopupConfig {
-  text: string;
-  expiresAt: string | null;
-  active: boolean;
-}
-
-export interface WhatsappConfig {
-  whatsappNumber: string;
-  whatsappMessageTemplate: string;
-  whatsappReceiverName: string;
 }

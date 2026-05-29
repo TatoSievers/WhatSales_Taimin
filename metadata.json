@@ -1,6 +1,7 @@
 {
-  "name": "Taimin - WhatSales - prescritores",
+  "name": "(Antigravity) - Taimin - WhatSales - prescritores",
   "description": "Venda exclusiva para prescritores",
   "requestFramePermissions": [],
-  "prompt": ""
+  "prompt": "",
+  "majorCapabilities": []
 }

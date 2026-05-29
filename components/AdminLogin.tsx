@@ -1,48 +1,34 @@
 import React, { useState } from 'react';
-import { supabase } from '../lib/supabaseClient';
 
 interface AdminLoginProps {
   onAuthSuccess: () => void;
 }
 
 const AdminLogin: React.FC<AdminLoginProps> = ({ onAuthSuccess }) => {
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-
+  
+  // A senha agora é lida de uma variável de ambiente segura (através do helper de compatibilidade)
+  const getAdminPassword = () => {
     try {
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      return (import.meta as any).env.VITE_ADMIN_PASSWORD || (process as any).env?.VITE_ADMIN_PASSWORD || 'admin';
+    } catch (e) {
+      return 'admin';
+    }
+  };
+  
+  const adminPassword = getAdminPassword();
+  const isDemoMode = adminPassword === 'admin';
 
-      if (authError) {
-        // If sign in fails, check if it's the fallback admin password
-        const adminPassword = (import.meta as any).env.VITE_ADMIN_PASSWORD;
-        if (password === adminPassword) {
-          // Fallback for legacy generic admin (Note: This won't fix RLS if RLS requires auth)
-          // But we keep it to not break existing behavior if Supabase Auth is down/not configured for this user
-          console.warn("Using fallback local admin password. RLS data might not load.");
-          onAuthSuccess();
-          return;
-        }
-        throw authError;
-      }
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
 
-      if (data.session) {
-        onAuthSuccess();
-      }
-    } catch (err: any) {
-      console.error("Login error:", err);
-      setError(err.message || 'Falha na autenticação.');
-    } finally {
-      setLoading(false);
+    if (password === adminPassword) {
+      setError('');
+      onAuthSuccess();
+    } else {
+      setError('Senha incorreta. Tente novamente.');
+      setPassword('');
     }
   };
 
@@ -50,28 +36,28 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onAuthSuccess }) => {
     <div className="flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md border border-gray-200">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-800">Acesso Administrativo</h1>
+          <h1 className="text-3xl font-bold text-gray-800">Acesso Restrito</h1>
           <p className="mt-2 text-gray-600">
-            Entre com suas credenciais de administrador.
+            Esta página é protegida. Por favor, insira a senha para continuar.
           </p>
         </div>
+
+        {isDemoMode && (
+          <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-md text-xs leading-relaxed">
+            <span className="font-semibold block mb-1">Modo de Demonstração Local</span>
+            A variável de ambiente <code className="bg-amber-100 px-1 rounded">VITE_ADMIN_PASSWORD</code> não está definida.
+            Use a senha padrão <strong className="underline font-bold">admin</strong> para acessar o painel.
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="email" className="sr-only">Email</label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-gray-100 text-gray-800"
-              placeholder="Email do Administrador"
-            />
-          </div>
-          <div>
-            <label htmlFor="password" className="sr-only">Senha</label>
+            <label
+              htmlFor="password"
+              className="sr-only"
+            >
+              Senha
+            </label>
             <input
               id="password"
               name="password"
@@ -88,10 +74,9 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onAuthSuccess }) => {
           <div>
             <button
               type="submit"
-              disabled={loading}
-              className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-700 hover:bg-primary-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-700 hover:bg-primary-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
             >
-              {loading ? 'Entrando...' : 'Acessar Painel'}
+              Acessar Painel
             </button>
           </div>
         </form>

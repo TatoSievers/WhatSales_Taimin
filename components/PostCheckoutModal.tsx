@@ -1,17 +1,17 @@
+
 import React, { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
-import { isIOS, getWhatsappConfig } from '../utils';
+import { isIOS } from '../utils';
+import { WHATSAPP_NUMBER } from '../constants';
 import WhatsappIcon from './icons/WhatsappIcon';
 
 const PostCheckoutModal: React.FC = () => {
   const { clearCart, closePostCheckoutModal, postCheckoutMessage } = useCart();
   const [isIosDevice, setIsIosDevice] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
-  const [whatsappNum, setWhatsappNum] = useState('');
 
   useEffect(() => {
     setIsIosDevice(isIOS());
-    getWhatsappConfig().then(config => setWhatsappNum(config.whatsappNumber));
   }, []);
 
   const handleNewOrder = () => {
@@ -29,7 +29,7 @@ const PostCheckoutModal: React.FC = () => {
   };
 
   const handleOpenWhatsApp = () => {
-    window.open(`https://wa.me/${whatsappNum || '5511946430386'}`, '_blank');
+    window.open(`https://wa.me/${WHATSAPP_NUMBER}`, '_blank');
   };
 
   if (isIosDevice && postCheckoutMessage) {
@@ -37,7 +37,7 @@ const PostCheckoutModal: React.FC = () => {
       <div className="fixed inset-0 bg-black bg-opacity-60 z-[60] flex items-center justify-center p-4" aria-modal="true" role="dialog">
         <div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 max-w-md w-full text-left transform transition-all">
           <h2 className="text-2xl font-bold text-primary-900 mb-4 text-center">Finalize seu Pedido no iOS</h2>
-          <p className="text-gray-600 mb-6">Devido a restrições do iOS, o envio não é automatico. Por favor, siga os passos abaixo:</p>
+          <p className="text-gray-600 mb-6">Devido a restrições do iOS, o envio não é automático. Por favor, siga os passos abaixo:</p>
           <div className="space-y-4">
             <div>
               <label className="font-bold text-gray-800">Passo 1: Copie a mensagem do pedido</label>
