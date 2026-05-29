@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useProducts } from '../context/ProductContext';
-import { Product, NewProduct, Order } from '../types';
+import { Product, NewProduct, Order, PopupConfig, WhatsappConfig } from '../types';
 import EditIcon from './icons/EditIcon';
 import TrashIcon from './icons/TrashIcon';
 import CloseIcon from './icons/CloseIcon';
-import { formatCurrency, getOrders, updateOrder, deleteOrder, isPromoActive } from '../utils';
+import { formatCurrency, getOrders, updateOrder, deleteOrder, isPromoActive, getPopupConfig, updatePopupConfig, getWhatsappConfig, updateWhatsappConfig, migrateOldOrdersAttendant } from '../utils';
+import ConfirmModal from './ConfirmModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { Bar, Line, Pie } from 'react-chartjs-2';
+import { Bar, Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -16,15 +17,13 @@ import {
   BarElement,
   PointElement,
   LineElement,
-  ArcElement,
-  TimeScale,
   Title,
   Tooltip,
   Legend,
+  ChartData,
+  ChartOptions
 } from 'chart.js';
-import 'chartjs-adapter-date-fns';
-// FIX: Switched to sub-path imports for date-fns to resolve module resolution errors. This is more robust and avoids potential issues with bundler configurations or package versions.
-// FIX: Corrected date-fns imports to use sub-paths to resolve module resolution errors.
+import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { endOfDay, parseISO, startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -34,170 +33,287 @@ ChartJS.register(
   BarElement,
   PointElement,
   LineElement,
-  ArcElement,
-  TimeScale,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  ChartDataLabels
 );
 
-// --- DASHBOARD COMPONENTS --- //
-
 const DollarSignIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8v1m0 8v1m0-6v1m0 6v1M6 6h12a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2z" />
-    </svg>
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8v1m0 8v1m0-6v1m0 6v1M6 6h12a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2z" />
+  </svg>
 );
 
 const ShoppingBagIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-    </svg>
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+  </svg>
 );
 
 const UsersIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21a6 6 0 00-9-5.197M15 21a6 6 0 00-9-5.197" />
-    </svg>
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21a6 6 0 00-9-5.197M15 21a6 6 0 00-9-5.197" />
+  </svg>
 );
 
 const KpiCard = ({ title, value, icon }: { title: string; value: string | number; icon: React.ReactNode }) => (
-    <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 flex items-center space-x-4">
-        <div className="bg-primary-100 p-4 rounded-full">{icon}</div>
-        <div>
-            <p className="text-sm text-gray-500 font-medium uppercase tracking-wider">{title}</p>
-            <p className="text-3xl font-bold text-gray-800">{value}</p>
-        </div>
+  <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 flex items-center space-x-4">
+    <div className="bg-primary-100 p-4 rounded-full">{icon}</div>
+    <div>
+      <p className="text-sm text-gray-500 font-medium uppercase tracking-wider">{title}</p>
+      <p className="text-3xl font-bold text-gray-800">{value}</p>
     </div>
+  </div>
 );
 
-
 const Dashboard = ({ orders, products }: { orders: Order[], products: Product[] }) => {
-    const today = new Date();
-    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const today = new Date();
 
-    const [startDate, setStartDate] = useState(firstDayOfMonth.toISOString().split('T')[0]);
-    const [endDate, setEndDate] = useState(today.toISOString().split('T')[0]);
+  const [yearFilter, setYearFilter] = useState<'all' | string>(today.getFullYear().toString());
+  const [monthFilter, setMonthFilter] = useState<'all' | string>((today.getMonth() + 1).toString());
 
-    const filteredOrders = useMemo(() => {
-        if (!startDate || !endDate) return orders;
-        const start = startOfDay(parseISO(startDate));
-        const end = endOfDay(parseISO(endDate));
-        return orders.filter(order => {
-            const orderDate = parseISO(order.date);
-            return orderDate >= start && orderDate <= end;
-        });
-    }, [orders, startDate, endDate]);
+  const filteredOrders = useMemo(() => {
+    return orders.filter(order => {
+      const orderDate = parseISO(order.date);
+      const yearMatches = yearFilter === 'all' || orderDate.getFullYear().toString() === yearFilter;
+      const monthMatches = monthFilter === 'all' || (orderDate.getMonth() + 1).toString() === monthFilter;
+      return yearMatches && monthMatches;
+    });
+  }, [orders, yearFilter, monthFilter]);
 
-    const kpiData = useMemo(() => {
-        const totalRevenue = filteredOrders.reduce((sum, order) => sum + order.totalPrice, 0);
-        const totalOrders = filteredOrders.length;
-        const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-        const uniqueCustomers = new Set(filteredOrders.map(order => order.customer.cpf)).size;
-        return { totalRevenue, totalOrders, averageOrderValue, uniqueCustomers };
-    }, [filteredOrders]);
-    
-    const chartData = useMemo(() => {
-        // Sales over Time
-        const salesByDay = filteredOrders.reduce((acc, order) => {
-            const day = startOfDay(parseISO(order.date)).toISOString();
-            acc[day] = (acc[day] || 0) + order.totalPrice;
-            return acc;
-        }, {} as Record<string, number>);
+  const kpiData = useMemo(() => {
+    const totalRevenue = filteredOrders.reduce((sum, order) => sum + order.totalPrice, 0);
+    const totalOrders = filteredOrders.length;
+    const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+    const uniqueCustomers = new Set(filteredOrders.map(order => order.customer.cpf)).size;
+    return { totalRevenue, totalOrders, averageOrderValue, uniqueCustomers };
+  }, [filteredOrders]);
 
-        const sortedDays = Object.keys(salesByDay).sort((a,b) => new Date(a).getTime() - new Date(b).getTime());
+  const salesByMonth = useMemo(() => {
+    const monthlyData: Record<string, { total: number; count: number }> = {};
+    filteredOrders.forEach(order => {
+      const date = parseISO(order.date);
+      const key = `${date.getMonth() + 1}/${date.getFullYear()}`;
+      if (!monthlyData[key]) monthlyData[key] = { total: 0, count: 0 };
+      monthlyData[key].total += order.totalPrice;
+      monthlyData[key].count += 1;
+    });
+    return Object.entries(monthlyData).sort((a, b) => {
+      const [mA, yA] = a[0].split('/').map(Number);
+      const [mB, yB] = b[0].split('/').map(Number);
+      return new Date(yA, mA - 1).getTime() - new Date(yB, mB - 1).getTime();
+    });
+  }, [filteredOrders]);
 
-        const salesOverTimeData = {
-            labels: sortedDays,
-            datasets: [{
-                label: 'Receita',
-                data: sortedDays.map(day => salesByDay[day]),
-                borderColor: '#15803d',
-                backgroundColor: 'rgba(21, 128, 61, 0.1)',
-                fill: true,
-                tension: 0.3,
-            }]
-        };
+  const chartData = useMemo(() => {
+    const isAllTime = yearFilter === 'all';
+    let salesMap: Record<string, number> = {};
 
-        // Top Selling Products
-        const productSales = filteredOrders
-            .flatMap(o => o.items)
-            .reduce((acc, item) => {
-                acc[item.name] = (acc[item.name] || 0) + item.quantity;
-                return acc;
-            }, {} as Record<string, number>);
-        
-        const topProducts = Object.entries(productSales)
-            .sort(([, qtyA], [, qtyB]) => qtyB - qtyA)
-            .slice(0, 10);
+    if (isAllTime) {
+      salesMap = filteredOrders.reduce((acc, order) => {
+        const date = parseISO(order.date);
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        acc[key] = (acc[key] || 0) + order.totalPrice;
+        return acc;
+      }, {} as Record<string, number>);
+    } else {
+      salesMap = filteredOrders.reduce((acc, order) => {
+        const day = order.date.split('T')[0];
+        acc[day] = (acc[day] || 0) + order.totalPrice;
+        return acc;
+      }, {} as Record<string, number>);
+    }
 
-        const topProductsData = {
-            labels: topProducts.map(([name]) => name),
-            datasets: [{
-                label: 'Unidades Vendidas',
-                data: topProducts.map(([, qty]) => qty),
-                backgroundColor: '#22c55e',
-                borderColor: '#16a34a',
-                borderWidth: 1,
-            }]
-        };
+    const sortedKeys = Object.keys(salesMap).sort();
 
-        return { salesOverTimeData, topProductsData };
-    }, [filteredOrders, products]);
-    
-    const chartOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } }
+    const salesOverTimeData: ChartData<'line'> = {
+      labels: sortedKeys.map(key => {
+        if (isAllTime) {
+          const [y, m] = key.split('-');
+          return `${m}/${y}`;
+        } else {
+          const [y, m, d] = key.split('-');
+          return `${d}/${m}`;
+        }
+      }),
+      datasets: [{
+        label: 'Receita',
+        data: sortedKeys.map(key => salesMap[key] || 0),
+        borderColor: '#15803d',
+        backgroundColor: 'rgba(21, 128, 61, 0.1)',
+        fill: true,
+        tension: 0.3,
+      }]
     };
 
-    return (
-        <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 mb-8">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Dashboard Gerencial</h2>
-            
-            <div className="mb-6 p-4 bg-gray-50 rounded-md border border-gray-200 flex flex-col sm:flex-row items-center gap-4">
-                <label className="font-semibold text-gray-700">Filtrar por Período:</label>
-                <div className="flex items-center gap-2">
-                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-white" />
-                    <span className="text-gray-600">até</span>
-                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-white" />
-                </div>
-            </div>
+    const productSales = filteredOrders
+      .flatMap(o => o.items)
+      .reduce((acc, item) => {
+        acc[item.name] = (acc[item.name] || 0) + item.quantity;
+        return acc;
+      }, {} as Record<string, number>);
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <KpiCard title="Receita Total" value={formatCurrency(kpiData.totalRevenue)} icon={<DollarSignIcon />} />
-                <KpiCard title="Total de Pedidos" value={kpiData.totalOrders} icon={<ShoppingBagIcon />} />
-                <KpiCard title="Ticket Médio" value={formatCurrency(kpiData.averageOrderValue)} icon={<DollarSignIcon />} />
-                <KpiCard title="Clientes Únicos" value={kpiData.uniqueCustomers} icon={<UsersIcon />} />
-            </div>
+    const sortedProducts = Object.entries(productSales).sort(([, qtyA], [, qtyB]) => qtyB - qtyA);
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 h-96">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-4">Vendas ao Longo do Tempo</h3>
-                    <Line data={chartData.salesOverTimeData} options={{...chartOptions, scales: { x: { type: 'time', time: { unit: 'day', displayFormats: { day: 'dd/MM' } }, adapters: { date: { locale: ptBR } } } } }} />
-                </div>
-                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 h-96">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-4">Produtos Mais Vendidos</h3>
-                    <Bar data={chartData.topProductsData} options={{ ...chartOptions, indexAxis: 'y' as const }} />
-                </div>
-            </div>
+    const topProductsData: ChartData<'bar'> = {
+      labels: sortedProducts.map(([name]) => name),
+      datasets: [{
+        label: 'Unidades Vendidas',
+        data: sortedProducts.map(([, qty]) => qty),
+        backgroundColor: '#22c55e',
+        borderColor: '#16a34a',
+        borderWidth: 1,
+      }]
+    };
+
+    const customerSales = filteredOrders.reduce((acc, order) => {
+      const name = order.customer.name;
+      acc[name] = (acc[name] || 0) + order.totalPrice;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const topCustomers = Object.entries(customerSales)
+      .sort(([, valA], [, valB]) => valB - valA)
+      .slice(0, 10);
+
+    const topCustomersData: ChartData<'bar'> = {
+      labels: topCustomers.map(([name]) => name),
+      datasets: [{
+        label: 'Total Comprado (R$)',
+        data: topCustomers.map(([, val]) => val),
+        backgroundColor: '#3b82f6',
+        borderColor: '#2563eb',
+        borderWidth: 1,
+        datalabels: {
+          color: 'white',
+          anchor: 'end',
+          align: 'start',
+          formatter: (value) => formatCurrency(value as number),
+          font: { weight: 'bold' }
+        }
+      }]
+    };
+
+    const customersWithOrders = filteredOrders.reduce((acc, order) => {
+      const cpf = order.customer.cpf;
+      acc[cpf] = (acc[cpf] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const totalUniqueCustomers = Object.keys(customersWithOrders).length;
+    const returningCustomers = Object.values(customersWithOrders).filter(count => count > 1).length;
+    const repurchaseRate = totalUniqueCustomers > 0 ? (returningCustomers / totalUniqueCustomers) * 100 : 0;
+
+    return { salesOverTimeData, topProductsData, topCustomersData, repurchaseRate };
+  }, [filteredOrders, yearFilter]);
+
+  const chartOptions: ChartOptions<'line' | 'bar'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false }, datalabels: { display: false } }
+  };
+
+  const topProductsOptions: ChartOptions<'bar'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    indexAxis: 'y',
+    plugins: {
+      legend: { display: false },
+      datalabels: { display: true, color: 'black', anchor: 'end', align: 'end', formatter: (value) => value }
+    }
+  };
+
+  const topCustomersOptions: ChartOptions<'bar'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    indexAxis: 'y',
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (context) => formatCurrency(context.raw as number) } },
+      datalabels: { display: true }
+    }
+  };
+
+  return (
+    <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 mb-8">
+      <h2 className="text-2xl font-bold text-gray-800 mb-4">Dashboard Gerencial</h2>
+      <div className="mb-6 p-4 bg-gray-50 rounded-md border border-gray-200 flex flex-col md:flex-row items-center justify-between gap-4">
+        <h3 className="text-lg font-semibold text-gray-700">Filtros de Data:</h3>
+        <div className="flex gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
+            <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+              <option value="all">Todos</option>
+              <option value="2025">2025</option>
+              <option value="2026">2026</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
+            <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} className="block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+              <option value="all">Todos</option>
+              <option value="1">Janeiro</option><option value="2">Fevereiro</option><option value="3">Março</option>
+              <option value="4">Abril</option><option value="5">Maio</option><option value="6">Junho</option>
+              <option value="7">Julho</option><option value="8">Agosto</option><option value="9">Setembro</option>
+              <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+            </select>
+          </div>
         </div>
-    );
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+        <KpiCard title="Receita Total" value={formatCurrency(kpiData.totalRevenue)} icon={<DollarSignIcon />} />
+        <KpiCard title="Total de Pedidos" value={kpiData.totalOrders} icon={<ShoppingBagIcon />} />
+        <KpiCard title="Ticket Médio" value={formatCurrency(kpiData.averageOrderValue)} icon={<DollarSignIcon />} />
+        <KpiCard title="Clientes Únicos" value={kpiData.uniqueCustomers} icon={<UsersIcon />} />
+        <KpiCard title="Taxa de Recompra" value={`${chartData.repurchaseRate.toFixed(1)}%`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>} />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <div className="lg:col-span-2 bg-gray-50 p-4 rounded-lg border border-gray-200 h-96">
+          <h3 className="text-lg font-semibold text-gray-700 mb-4">Vendas ao Longo do Tempo</h3>
+          <Line data={chartData.salesOverTimeData} options={chartOptions} />
+        </div>
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 h-96 overflow-y-auto">
+          <h3 className="text-lg font-semibold text-gray-700 mb-4">Vendas por Mês</h3>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mês</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Vendas</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {salesByMonth.map(([key, data]) => (
+                <tr key={key}>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{key}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-right">
+                    <div className="font-medium">{formatCurrency(data.total)}</div>
+                    <div className="text-xs text-gray-500">{data.count} pedidos</div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-6">
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200" style={{ minHeight: '500px' }}>
+          <h3 className="text-lg font-semibold text-gray-700 mb-4">Todos os Produtos Mais Vendidos</h3>
+          <div className="h-[600px]"><Bar data={chartData.topProductsData} options={topProductsOptions} /></div>
+        </div>
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 h-96">
+          <h3 className="text-lg font-semibold text-gray-700 mb-4">Principais Clientes (Top 10)</h3>
+          <Bar data={chartData.topCustomersData} options={topCustomersOptions} />
+        </div>
+      </div>
+    </div>
+  );
 };
 
-// --- END DASHBOARD --- //
-
 const initialFormState: NewProduct = {
-  name: '',
-  price: 0,
-  promoPrice: 0,
-  promoEndDate: '',
-  category: 'Fórmulas Magistrais Chinesas',
-  imageUrl: '',
-  quantityInfo: '',
-  action: '',
-  indication: '',
-  visibility: 'in_stock',
+  name: '', price: 0, promoPrice: 0, promoStartDate: '', promoEndDate: '',
+  category: 'Fórmulas Magistrais Chinesas', imageUrl: '', quantityInfo: '',
+  action: '', indication: '', visibility: 'in_stock',
 };
 
 const Admin: React.FC = () => {
@@ -207,43 +323,76 @@ const Admin: React.FC = () => {
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
   const [successMessage, setSuccessMessage] = useState('');
   const [orders, setOrders] = useState<Order[]>([]);
-
-  // Product Filters State
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [productFilterCategory, setProductFilterCategory] = useState('all');
   const [productFilterVisibility, setProductFilterVisibility] = useState('all');
-  
-  // Order Filters State
   const [orderSearchTerm, setOrderSearchTerm] = useState('');
   const [orderFilterStatus, setOrderFilterStatus] = useState<'all' | 'open' | 'completed'>('all');
   const [orderFilterCustomerStatus, setOrderFilterCustomerStatus] = useState<'all' | 'pending' | 'registered'>('all');
   const [orderStartDate, setOrderStartDate] = useState('');
   const [orderEndDate, setOrderEndDate] = useState('');
-
-  // Order Deletion Modal State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState('');
-  
-  // TXT Export Modal State
   const [isTxtExportModalOpen, setIsTxtExportModalOpen] = useState(false);
   const [txtExportContent, setTxtExportContent] = useState('');
   const [copySuccess, setCopySuccess] = useState('');
-
+  const [popupConfig, setPopupConfig] = useState<PopupConfig>({ text: '', expiresAt: null, active: false });
+  const [popupLoading, setPopupLoading] = useState(false);
+  const [whatsappConfig, setWhatsappConfig] = useState<WhatsappConfig>({ whatsappNumber: '', whatsappReceiverName: '', whatsappMessageTemplate: '' });
+  const [whatsappLoading, setWhatsappLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [ordersPerPage] = useState(20);
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; title: string; message: React.ReactNode; onConfirm: () => void; isDangerous: boolean; }>({ isOpen: false, title: '', message: null, onConfirm: () => {}, isDangerous: false });
+  const { applyBulkPromotion } = useProducts();
+  const [bulkDiscount, setBulkDiscount] = useState<number | ''>('');
+  const [bulkStartDate, setBulkStartDate] = useState('');
+  const [bulkEndDate, setBulkEndDate] = useState('');
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const observationUpdateTimers = useRef<{ [key: string]: number }>({});
-  
+
   const fetchOrders = useCallback(async () => {
     const ordersFromDb = await getOrders();
     setOrders(ordersFromDb);
   }, []);
 
+  const fetchPopupConfig = useCallback(async () => {
+    setPopupLoading(true);
+    const config = await getPopupConfig();
+    if (config) setPopupConfig(config);
+    setPopupLoading(false);
+  }, []);
+
+  const fetchWhatsappConfig = useCallback(async () => {
+    setWhatsappLoading(true);
+    const config = await getWhatsappConfig();
+    if (config) setWhatsappConfig(config);
+    setWhatsappLoading(false);
+  }, []);
+
+  const handleSaveWhatsappConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setWhatsappLoading(true);
+    try {
+      await updateWhatsappConfig(whatsappConfig);
+      setSuccessMessage('Configurações do WhatsApp atualizadas com sucesso!');
+    } catch (error) {
+      alert('Erro ao salvar configuração do WhatsApp.');
+    } finally {
+      setWhatsappLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchOrders();
+    fetchPopupConfig();
+    fetchWhatsappConfig();
+    migrateOldOrdersAttendant(); // FIX: atribui "Samantha" a pedidos antigos sem atendente
     return () => {
-        Object.values(observationUpdateTimers.current).forEach(clearTimeout);
+      Object.values(observationUpdateTimers.current).forEach(clearTimeout);
     };
-  }, [fetchOrders]);
+  }, [fetchOrders, fetchPopupConfig, fetchWhatsappConfig]);
 
   useEffect(() => {
     if (successMessage) {
@@ -251,7 +400,7 @@ const Admin: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [successMessage]);
-  
+
   useEffect(() => {
     if (copySuccess) {
       const timer = setTimeout(() => setCopySuccess(''), 2000);
@@ -262,28 +411,22 @@ const Admin: React.FC = () => {
   useEffect(() => {
     if (isEditing) {
       setFormData({
-        name: isEditing.name,
-        price: isEditing.price,
+        name: isEditing.name, price: isEditing.price,
         promoPrice: isEditing.promoPrice || 0,
+        promoStartDate: isEditing.promoStartDate ? isEditing.promoStartDate.split('T')[0] : '',
         promoEndDate: isEditing.promoEndDate ? isEditing.promoEndDate.split('T')[0] : '',
-        category: isEditing.category,
-        imageUrl: isEditing.imageUrl,
-        quantityInfo: isEditing.quantityInfo || '',
-        action: isEditing.action || '',
-        indication: isEditing.indication || '',
-        visibility: isEditing.visibility || 'in_stock',
+        category: isEditing.category, imageUrl: isEditing.imageUrl,
+        quantityInfo: isEditing.quantityInfo || '', action: isEditing.action || '',
+        indication: isEditing.indication || '', visibility: isEditing.visibility || 'in_stock',
       });
       setFormErrors({});
-      // Find the form and scroll to it
       const formElement = document.getElementById('product-form');
-      if (formElement) {
-        formElement.scrollIntoView({ behavior: 'smooth' });
-      }
+      if (formElement) formElement.scrollIntoView({ behavior: 'smooth' });
     } else {
       setFormData(initialFormState);
     }
   }, [isEditing]);
-  
+
   const validateForm = useCallback((): boolean => {
     const errors: { [key: string]: string } = {};
     if (!formData.name.trim()) errors.name = "Nome do produto é obrigatório.";
@@ -292,89 +435,53 @@ const Admin: React.FC = () => {
     if (!formData.imageUrl.trim()) {
       errors.imageUrl = "URL da imagem é obrigatória.";
     } else {
-      try {
-        new URL(formData.imageUrl);
-      } catch (_) {
-        errors.imageUrl = "Por favor, insira uma URL válida.";
-      }
+      try { new URL(formData.imageUrl); } catch (_) { errors.imageUrl = "Por favor, insira uma URL válida."; }
     }
-    
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   }, [formData]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: name === 'price' || name === 'promoPrice' ? parseFloat(value) || 0 : value
-    }));
-    if (formErrors[name]) {
-      setFormErrors(prev => ({ ...prev, [name]: '' }));
-    }
+    setFormData(prev => ({ ...prev, [name]: name === 'price' || name === 'promoPrice' ? parseFloat(value) || 0 : value }));
+    if (formErrors[name]) setFormErrors(prev => ({ ...prev, [name]: '' }));
   };
-  
-  const resetForm = useCallback(() => {
-    setFormData(initialFormState);
-    setIsEditing(null);
-    setFormErrors({});
-  }, []);
+
+  const resetForm = useCallback(() => { setFormData(initialFormState); setIsEditing(null); setFormErrors({}); }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
-
-    const productData = {
-      ...formData,
-      name: formData.name.toUpperCase(),
-      promoPrice: formData.promoPrice && formData.promoPrice > 0 ? formData.promoPrice : null,
-      promoEndDate: formData.promoEndDate || null,
-    };
-
-    if (isEditing) {
-      await updateProduct(isEditing.id, productData);
-      setSuccessMessage('Produto atualizado com sucesso!');
-    } else {
-      await addProduct(productData);
-      setSuccessMessage('Produto adicionado com sucesso!');
-    }
+    const productData = { ...formData, name: formData.name.toUpperCase(), promoPrice: formData.promoPrice && formData.promoPrice > 0 ? formData.promoPrice : null, promoStartDate: formData.promoStartDate || null, promoEndDate: formData.promoEndDate || null };
+    if (isEditing) { await updateProduct(isEditing.id, productData); setSuccessMessage('Produto atualizado com sucesso!'); }
+    else { await addProduct(productData); setSuccessMessage('Produto adicionado com sucesso!'); }
     resetForm();
   };
-  
+
   const handleDeleteProduct = async (id: number) => {
     if (window.confirm('Tem certeza que deseja excluir este produto?')) {
-        await deleteProductFromContext(id);
-        setSuccessMessage('Produto excluído com sucesso!');
-        if (isEditing && isEditing.id === id) {
-          resetForm();
-        }
+      await deleteProductFromContext(id);
+      setSuccessMessage('Produto excluído com sucesso!');
+      if (isEditing && isEditing.id === id) resetForm();
     }
   };
 
   const handleOrderUpdate = useCallback(async (orderId: string, updatedFields: Partial<Order>) => {
     const orderToSave = orders.find(o => o.id === orderId);
-    if(orderToSave){
-        const updatedOrder = {...orderToSave, ...updatedFields};
-        await updateOrder(updatedOrder);
-        setSuccessMessage(`Pedido de ${updatedOrder.customer.name} atualizado.`);
-        setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
+    if (orderToSave) {
+      const updatedOrder = { ...orderToSave, ...updatedFields };
+      await updateOrder(updatedOrder);
+      setSuccessMessage(`Pedido de ${updatedOrder.customer.name} atualizado.`);
+      setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
     }
   }, [orders]);
-  
+
   const handleObservationChange = (orderId: string, value: string) => {
-    setOrders(currentOrders => 
-        currentOrders.map(o => 
-            o.id === orderId ? { ...o, observation: value } : o
-        )
-    );
-    if (observationUpdateTimers.current[orderId]) {
-        clearTimeout(observationUpdateTimers.current[orderId]);
-    }
+    setOrders(currentOrders => currentOrders.map(o => o.id === orderId ? { ...o, observation: value } : o));
+    if (observationUpdateTimers.current[orderId]) clearTimeout(observationUpdateTimers.current[orderId]);
     observationUpdateTimers.current[orderId] = window.setTimeout(() => {
-        const order = orders.find(o => o.id === orderId);
-        if (order) {
-            updateOrder(order);
-        }
+      const order = orders.find(o => o.id === orderId);
+      if (order) updateOrder(order);
     }, 700);
   };
 
@@ -383,220 +490,138 @@ const Admin: React.FC = () => {
     const productName = products.find(p => p.id === productId)?.name || 'Produto';
     setSuccessMessage(`Visibilidade de '${productName}' atualizada.`);
   };
-  
-  const openDeleteModal = (order: Order) => {
-    setOrderToDelete(order);
-    setIsDeleteModalOpen(true);
-    setDeletePassword('');
-    setDeleteError('');
-  };
+
+  const openDeleteModal = (order: Order) => { setOrderToDelete(order); setIsDeleteModalOpen(true); setDeletePassword(''); setDeleteError(''); };
 
   const handleConfirmDelete = async () => {
     if (!orderToDelete) return;
     const adminPassword = (import.meta as any).env.VITE_ADMIN_PASSWORD;
-
-    if (deletePassword !== adminPassword) {
-        setDeleteError('Senha incorreta.');
-        return;
-    }
+    if (deletePassword !== adminPassword) { setDeleteError('Senha incorreta.'); return; }
     try {
-        await deleteOrder(orderToDelete.id);
-        setOrders(prev => prev.filter(o => o.id !== orderToDelete.id));
-        setSuccessMessage('Pedido excluído com sucesso!');
-        setIsDeleteModalOpen(false);
-        setOrderToDelete(null);
-    } catch (error) {
-        setDeleteError('Falha ao excluir o pedido.');
-    }
+      await deleteOrder(orderToDelete.id);
+      setOrders(prev => prev.filter(o => o.id !== orderToDelete.id));
+      setSuccessMessage('Pedido excluído com sucesso!');
+      setIsDeleteModalOpen(false);
+      setOrderToDelete(null);
+    } catch (error: any) { setDeleteError(error.message || 'Falha ao excluir o pedido.'); }
   };
 
   const baseInputClass = "w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-gray-100 text-gray-800 placeholder-gray-500";
   const errorInputClass = "border-red-500 ring-1 ring-red-500";
   const errorTextClass = "text-red-600 text-sm mt-1";
-  
+
   const duplicateOrderIds = useMemo(() => {
-    const seenOrders = new Map<string, string>(); // Map<compositeKey, firstOrderId>
+    const seenOrders = new Map<string, string>();
     const duplicates = new Set<string>();
-
-    // Sort orders by date to ensure the first one encountered is the original
     const sortedOrders = [...orders].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
     for (const order of sortedOrders) {
-      const itemsKey = order.items
-        .map(item => `${item.id}:${item.quantity}`)
-        .sort()
-        .join(',');
+      const itemsKey = order.items.map(item => `${item.id}:${item.quantity}`).sort().join(',');
       const compositeKey = `${order.customer.cpf}|${order.totalPrice}|${itemsKey}`;
-
-      if (seenOrders.has(compositeKey)) {
-        duplicates.add(order.id);
-      } else {
-        seenOrders.set(compositeKey, order.id);
-      }
+      if (seenOrders.has(compositeKey)) duplicates.add(order.id);
+      else seenOrders.set(compositeKey, order.id);
     }
     return duplicates;
   }, [orders]);
 
   useEffect(() => {
     const duplicateText = '(PEDIDO DUPLICADO)';
-    const ordersThatNeedUpdate = orders.filter(order => 
-        duplicateOrderIds.has(order.id) && !order.observation.startsWith(duplicateText)
-    );
-
+    const ordersThatNeedUpdate = orders.filter(order => duplicateOrderIds.has(order.id) && !order.observation.startsWith(duplicateText));
     if (ordersThatNeedUpdate.length > 0) {
       const updatedOrdersMap = new Map<string, Order>();
       ordersThatNeedUpdate.forEach(order => {
         const newObservation = order.observation ? `${duplicateText} ${order.observation}` : duplicateText;
-        const updatedOrder = { ...order, observation: newObservation };
-        updatedOrdersMap.set(order.id, updatedOrder);
+        updatedOrdersMap.set(order.id, { ...order, observation: newObservation });
       });
-
-      setOrders(currentOrders =>
-        currentOrders.map(o => updatedOrdersMap.get(o.id) || o)
-      );
-      
-      updatedOrdersMap.forEach(updatedOrder => {
-        updateOrder(updatedOrder);
-      });
+      setOrders(currentOrders => currentOrders.map(o => updatedOrdersMap.get(o.id) || o));
+      updatedOrdersMap.forEach(updatedOrder => updateOrder(updatedOrder));
     }
   }, [duplicateOrderIds, orders, updateOrder]);
 
-
   const filteredOrders = useMemo(() => {
     return orders.filter(order => {
-        const searchTermLower = orderSearchTerm.toLowerCase();
-        const matchesSearch = orderSearchTerm === '' ||
-            order.customer.name.toLowerCase().includes(searchTermLower) ||
-            order.customer.cpf.replace(/\D/g, '').includes(searchTermLower.replace(/\D/g, '')) ||
-            order.customer.email.toLowerCase().includes(searchTermLower);
-
-        const matchesStatus = orderFilterStatus === 'all' || order.status === orderFilterStatus;
-
-        const matchesCustomerStatus = orderFilterCustomerStatus === 'all' || order.customerStatus === orderFilterCustomerStatus;
-
-        const orderDate = parseISO(order.date);
-        const matchesStartDate = !orderStartDate || orderDate >= startOfDay(parseISO(orderStartDate));
-        const matchesEndDate = !orderEndDate || orderDate <= endOfDay(parseISO(orderEndDate));
-        
-        return matchesSearch && matchesStatus && matchesCustomerStatus && matchesStartDate && matchesEndDate;
+      const searchTermLower = orderSearchTerm.toLowerCase();
+      const matchesSearch = orderSearchTerm === '' || order.customer.name.toLowerCase().includes(searchTermLower) || order.customer.cpf.replace(/\D/g, '').includes(searchTermLower.replace(/\D/g, '')) || order.customer.email.toLowerCase().includes(searchTermLower);
+      const matchesStatus = orderFilterStatus === 'all' || order.status === orderFilterStatus;
+      const matchesCustomerStatus = orderFilterCustomerStatus === 'all' || order.customerStatus === orderFilterCustomerStatus;
+      const orderDate = parseISO(order.date);
+      const matchesStartDate = !orderStartDate || orderDate >= startOfDay(parseISO(orderStartDate));
+      const matchesEndDate = !orderEndDate || orderDate <= endOfDay(parseISO(orderEndDate));
+      return matchesSearch && matchesStatus && matchesCustomerStatus && matchesStartDate && matchesEndDate;
     });
   }, [orders, orderSearchTerm, orderFilterStatus, orderFilterCustomerStatus, orderStartDate, orderEndDate]);
-  
+
   const exportToPDF = useCallback(() => {
     const doc = new jsPDF();
-    doc.text("Relatório de Pedidos - Taimin", 14, 16);
-
-    const tableColumn = ["Data", "Cliente", "WhatsApp", "Profissão", "Reg. Profis.", "CPF", "Produto", "Qtd", "Subtotal", "Status Venda"];
+    const today = new Date().toLocaleDateString('pt-BR');
+    doc.setFontSize(18); doc.text("Relatório Gerencial - Taimin", 14, 20);
+    doc.setFontSize(10); doc.text(`Gerado em: ${today}`, 14, 28);
+    let currentY = 35;
+    const totalRevenue = filteredOrders.reduce((sum, order) => sum + order.totalPrice, 0);
+    const totalOrders = filteredOrders.length;
+    const averageTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+    doc.setFontSize(12); doc.text("Resumo Geral", 14, currentY); currentY += 10;
+    autoTable(doc, { startY: currentY, head: [["Receita Total", "Pedidos", "Ticket Médio"]], body: [[formatCurrency(totalRevenue), totalOrders.toString(), formatCurrency(averageTicket)]], theme: 'plain', styles: { fontSize: 12, fontStyle: 'bold', halign: 'center' }, headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0] } });
+    currentY = (doc as any).lastAutoTable.finalY + 15;
+    const productSales = filteredOrders.flatMap(o => o.items).reduce((acc, item) => { acc[item.name] = (acc[item.name] || 0) + item.quantity; return acc; }, {} as Record<string, number>);
+    const topProducts = Object.entries(productSales).sort((a, b) => (b[1] as number) - (a[1] as number)).slice(0, 10);
+    doc.text("Top 10 Produtos Mais Vendidos", 14, currentY); currentY += 5;
+    autoTable(doc, { startY: currentY, head: [["Produto", "Qtd Vendida"]], body: topProducts.map(([name, qty]) => [name, qty]), styles: { fontSize: 9 }, headStyles: { fillColor: [34, 84, 61] } });
+    currentY = (doc as any).lastAutoTable.finalY + 15;
+    const tableColumn = ["Data", "Cliente", "CPF", "Produto", "Qtd", "Preço", "Subtotal", "Status", "Atendente"];
     const tableRows: any[][] = [];
-
     filteredOrders.forEach(order => {
-        order.items.forEach(item => {
-            const rowData = [
-                new Date(order.date).toLocaleDateString('pt-BR'),
-                order.customer.name,
-                order.customer.phone || 'N/A',
-                order.customer.profissao || 'N/A',
-                order.customer.registro || 'N/A',
-                order.customer.cpf,
-                item.name,
-                item.quantity,
-                formatCurrency(item.price * item.quantity),
-                order.status === 'completed' ? 'Concluída' : 'Aberto'
-            ];
-            tableRows.push(rowData);
-        });
+      order.items.forEach(item => {
+        tableRows.push([new Date(order.date).toLocaleDateString('pt-BR'), order.customer.name, order.customer.cpf, item.name, item.quantity, formatCurrency(item.price), formatCurrency(item.price * item.quantity), order.status === 'completed' ? 'Conc.' : 'Aber.', order.receivedBy || 'Samantha']);
+      });
     });
-
-    autoTable(doc, {
-        head: [tableColumn],
-        body: tableRows,
-        startY: 20,
-        styles: { fontSize: 7 },
-        headStyles: { fillColor: [34, 84, 61] }, // Cor primária
-    });
-
-    doc.save('relatorio_pedidos_taimin.pdf');
+    doc.text("Detalhamento de Pedidos", 14, currentY); currentY += 5;
+    autoTable(doc, { startY: currentY, head: [tableColumn], body: tableRows, styles: { fontSize: 8 }, headStyles: { fillColor: [34, 84, 61] } });
+    doc.save('relatorio_gerencial_taimin.pdf');
   }, [filteredOrders]);
 
   const exportToExcel = useCallback(() => {
-    const flattenedData = filteredOrders.flatMap(order => 
-        order.items.map(item => ({
-            'ID Pedido': order.id,
-            'Data': new Date(order.date).toLocaleString('pt-BR'),
-            'Cliente': order.customer.name,
-            'Telefone/WhatsApp': order.customer.phone || 'N/A',
-            'Profissão': order.customer.profissao || 'N/A',
-            'Registro Profissional': order.customer.registro || 'N/A',
-            'CPF': order.customer.cpf,
-            'Email': order.customer.email,
-            'Status Cadastro': order.customerStatus === 'registered' ? 'Realizado' : 'Pendente',
-            'Status Venda': order.status === 'completed' ? 'Concluída' : 'Aberto',
-            'Observação': order.observation,
-            'ID Produto': item.id,
-            'Produto': item.name,
-            'Categoria': item.category,
-            'Quantidade': item.quantity,
-            'Preço Unitário': item.price,
-            'Subtotal Item': item.price * item.quantity,
-            'Total Pedido': order.totalPrice
-        }))
-    );
-
-    if (flattenedData.length === 0) {
-        alert("Não há dados de pedidos para exportar com os filtros atuais.");
-        return;
-    }
-
+    const flattenedData = filteredOrders.flatMap(order => order.items.map(item => ({ 'ID Pedido': order.id, 'Data': new Date(order.date).toLocaleString('pt-BR'), 'Cliente': order.customer.name, 'CPF': order.customer.cpf, 'Email': order.customer.email, 'Status Cadastro': order.customerStatus === 'registered' ? 'Realizado' : 'Pendente', 'Status Venda': order.status === 'completed' ? 'Concluída' : 'Aberto', 'Atendente': order.receivedBy || 'Samantha', 'Observação': order.observation, 'ID Produto': item.id, 'Produto': item.name, 'Categoria': item.category, 'Quantidade': item.quantity, 'Preço Unitário': item.price, 'Subtotal Item': item.price * item.quantity, 'Total Pedido': order.totalPrice })));
+    if (flattenedData.length === 0) { alert("Não há dados de pedidos para exportar com os filtros atuais."); return; }
     const worksheet = XLSX.utils.json_to_sheet(flattenedData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Pedidos');
-    
     const headerKeys = Object.keys(flattenedData[0] || {});
-    const colWidths = headerKeys.map(key => ({
-        wch: Math.max(
-            key.length,
-            ...flattenedData.map(row => (row[key as keyof typeof row] || '').toString().length)
-        ) + 2
-    }));
-    worksheet['!cols'] = colWidths;
-
+    worksheet['!cols'] = headerKeys.map(key => ({ wch: Math.max(key.length, ...flattenedData.map(row => (row[key as keyof typeof row] || '').toString().length)) + 2 }));
     XLSX.writeFile(workbook, 'relatorio_pedidos_taimin.xlsx');
   }, [filteredOrders]);
 
   const openTxtExportModal = useCallback(() => {
     const fileContent = filteredOrders.map(order => {
-        const itemsText = order.items.map(i => `- ${i.quantity}x ${i.name.toUpperCase()} (${formatCurrency(i.price * i.quantity)})`).join('\n');
-        const customerStatusText = order.customerStatus === 'registered' ? 'Realizado' : 'Pendente';
-        const orderStatusText = order.status === 'completed' ? 'Concluída' : 'Aberto';
-        const observationText = order.observation || 'Nenhuma';
-        const orderDate = new Date(order.date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-        return `*Pedido de: ${order.customer.name}*
-*WhatsApp:* ${order.customer.phone || 'N/A'}
-*Profissão / Reg.:* ${order.customer.profissao || 'N/A'} - ${order.customer.registro || 'N/A'}
-*CPF:* ${order.customer.cpf}
-*Data:* ${orderDate}
-
-*Itens do Pedido:*
-${itemsText}
-
-*Total:* ${formatCurrency(order.totalPrice)}
-*Status Cadastro:* ${customerStatusText}
-*Status Venda:* ${orderStatusText}
-*Observação:* ${observationText}
----------------------------------------`;
+      const itemsText = order.items.map(i => `- ${i.quantity}x ${i.name.toUpperCase()} (${formatCurrency(i.price * i.quantity)})`).join('\n');
+      const orderDate = new Date(order.date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      return `*Pedido de: ${order.customer.name}*\n*CPF:* ${order.customer.cpf}\n*Data:* ${orderDate}\n*Atendente:* ${order.receivedBy || 'Samantha'}\n\n*Itens do Pedido:*\n${itemsText}\n\n*Total:* ${formatCurrency(order.totalPrice)}\n*Status Cadastro:* ${order.customerStatus === 'registered' ? 'Realizado' : 'Pendente'}\n*Status Venda:* ${order.status === 'completed' ? 'Concluída' : 'Aberto'}\n*Observação:* ${order.observation || 'Nenhuma'}\n---------------------------------------`;
     }).join('\n\n');
-    
     setTxtExportContent(fileContent);
     setIsTxtExportModalOpen(true);
   }, [filteredOrders]);
 
   const handleCopyTxt = useCallback(() => {
-    if (txtExportContent) {
-      navigator.clipboard.writeText(txtExportContent);
-      setCopySuccess('Texto copiado com sucesso!');
-    }
+    if (txtExportContent) { navigator.clipboard.writeText(txtExportContent); setCopySuccess('Texto copiado com sucesso!'); }
   }, [txtExportContent]);
+
+  const handleSavePopupConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try { await updatePopupConfig({ ...popupConfig, expiresAt: popupConfig.expiresAt || null }); setSuccessMessage('Configurações do aviso atualizadas com sucesso!'); }
+    catch (error) { alert('Erro ao salvar configuração do aviso.'); }
+  };
+
+  const handleApplyBulkPromotion = async () => {
+    if (!bulkStartDate || !bulkEndDate) { alert('Por favor, defina as datas de início e fim para a promoção em massa.'); return; }
+    const discount = bulkDiscount === '' ? null : Number(bulkDiscount);
+    if (discount !== null && (discount <= 0 || discount >= 100)) { alert('O desconto deve ser entre greater than 0 e menor que 100.'); return; }
+    setConfirmModal({ isOpen: true, title: 'Aplicar Promoção em Massa', message: (<div><p>Tem certeza que deseja aplicar esta promoção para <strong>TODOS</strong> os produtos?</p><p className="mt-2 text-sm text-gray-500">Isso sobrescreverá quaisquer promoções existentes.</p></div>), isDangerous: false, onConfirm: async () => { setIsBulkProcessing(true); setConfirmModal(prev => ({ ...prev, isOpen: false })); await applyBulkPromotion(discount, bulkStartDate, bulkEndDate); setIsBulkProcessing(false); setSuccessMessage('Promoção em massa aplicada com sucesso!'); } });
+  };
+
+  const handleClearAllPromotions = async () => {
+    setConfirmModal({ isOpen: true, title: 'Limpar Todas as Promoções', message: (<div><p>Tem certeza que deseja <strong>REMOVER</strong> todas as promoções de todos os produtos?</p><p className="mt-2 text-sm text-gray-500">Esta ação não pode ser desfeita.</p></div>), isDangerous: true, onConfirm: async () => { setIsBulkProcessing(true); setConfirmModal(prev => ({ ...prev, isOpen: false })); await applyBulkPromotion(null, null, null); setIsBulkProcessing(false); setSuccessMessage('Todas as promoções foram removidas com sucesso!'); } });
+  };
+
+  const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, isOpen: false }));
 
   const productCategories = useMemo(() => ['all', ...new Set(products.map(p => p.category))], [products]);
 
@@ -609,20 +634,80 @@ ${itemsText}
     });
   }, [products, productSearchTerm, productFilterCategory, productFilterVisibility]);
 
+  const indexOfLastOrder = currentPage * ordersPerPage;
+  const indexOfFirstOrder = indexOfLastOrder - ordersPerPage;
+  const currentOrders = filteredOrders.slice(indexOfFirstOrder, indexOfLastOrder);
+  const totalPages = Math.ceil(filteredOrders.length / ordersPerPage);
+  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
+
   return (
     <div className="space-y-8">
+      <ConfirmModal isOpen={confirmModal.isOpen} title={confirmModal.title} message={confirmModal.message} onConfirm={confirmModal.onConfirm} onCancel={closeConfirmModal} isDangerous={confirmModal.isDangerous} />
       <div>
         <h1 className="text-3xl font-bold text-primary-900 mb-2">Painel do Administrador</h1>
         <p className="text-gray-600">Gerencie os produtos e pedidos da sua loja.</p>
       </div>
-
-      {successMessage && (
-        <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded-md shadow-sm" role="alert">
-          <p className="font-bold">{successMessage}</p>
-        </div>
-      )}
-
+      {successMessage && (<div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded-md shadow-sm" role="alert"><p className="font-bold">{successMessage}</p></div>)}
       <Dashboard orders={orders} products={products} />
+
+      {/* Popup Configuration */}
+      <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+        <h2 className="text-2xl font-bold text-gray-800 mb-4">Configuração de Aviso (Popup)</h2>
+        <form onSubmit={handleSavePopupConfig} className="space-y-4">
+          <div>
+            <label htmlFor="popupText" className="block text-sm font-medium text-gray-700 mb-1">Texto do Aviso</label>
+            <textarea id="popupText" rows={4} className={baseInputClass} value={popupConfig.text} onChange={e => setPopupConfig(prev => ({ ...prev, text: e.target.value }))} placeholder="Digite a mensagem que aparecerá ao abrir o app..." />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="popupExpiration" className="block text-sm font-medium text-gray-700 mb-1">Data de Expiração (Opcional)</label>
+              <input type="date" id="popupExpiration" className={baseInputClass} value={popupConfig.expiresAt ? popupConfig.expiresAt.split('T')[0] : ''} onChange={e => { const isoDate = e.target.value ? `${e.target.value}T23:59:59` : null; setPopupConfig(prev => ({ ...prev, expiresAt: isoDate })); }} />
+              <p className="text-xs text-gray-500 mt-1">O aviso deixará de aparecer após esta data.</p>
+            </div>
+            <div className="flex items-center">
+              <label className="flex items-center cursor-pointer">
+                <input type="checkbox" className="form-checkbox h-5 w-5 text-primary-600 rounded border-gray-300 focus:ring-primary-500" checked={popupConfig.active} onChange={e => setPopupConfig(prev => ({ ...prev, active: e.target.checked }))} />
+                <span className="ml-2 text-gray-700 font-medium">Ativar Aviso</span>
+              </label>
+            </div>
+          </div>
+          <button type="submit" disabled={popupLoading} className="bg-primary-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-primary-700 transition-colors disabled:opacity-50">{popupLoading ? 'Salvando...' : 'Salvar Configuração'}</button>
+        </form>
+      </div>
+
+      {/* Configuração do WhatsApp */}
+      <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+        <h2 className="text-2xl font-bold text-gray-800 mb-4">Configuração do WhatsApp de Vendas</h2>
+        <form onSubmit={handleSaveWhatsappConfig} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="whatsappReceiverName" className="block text-sm font-medium text-gray-700 mb-1">Nome do Recebedor (Atendente Padrão)</label>
+              <input type="text" id="whatsappReceiverName" className={baseInputClass} value={whatsappConfig.whatsappReceiverName} onChange={e => setWhatsappConfig(prev => ({ ...prev, whatsappReceiverName: e.target.value }))} placeholder="Ex: Samantha" required />
+              <p className="text-xs text-gray-500 mt-1">Nome exibido como atendente responsável no relatório de pedidos.</p>
+            </div>
+            <div>
+              <label htmlFor="whatsappNumber" className="block text-sm font-medium text-gray-700 mb-1">Número do WhatsApp (com código do país)</label>
+              <input type="text" id="whatsappNumber" className={baseInputClass} value={whatsappConfig.whatsappNumber} onChange={e => setWhatsappConfig(prev => ({ ...prev, whatsappNumber: e.target.value.replace(/\D/g, '') }))} placeholder="Ex: 5511999999999" required />
+              <p className="text-xs text-gray-500 mt-1">Número que receberá a mensagem de finalização do carrinho.</p>
+            </div>
+          </div>
+          <div>
+            <label htmlFor="whatsappMessageTemplate" className="block text-sm font-medium text-gray-700 mb-1">Modelo da Mensagem do Pedido</label>
+            <textarea id="whatsappMessageTemplate" rows={6} className={baseInputClass} value={whatsappConfig.whatsappMessageTemplate} onChange={e => setWhatsappConfig(prev => ({ ...prev, whatsappMessageTemplate: e.target.value }))} placeholder="Configure o texto da mensagem..." required />
+            <div className="mt-2 p-3 bg-gray-50 rounded text-xs text-gray-600 space-y-1">
+              <p className="font-bold">Variáveis disponíveis para substituição automática:</p>
+              <ul className="list-disc list-inside">
+                <li><code>{"{nome}"}</code> - Nome completo do cliente</li>
+                <li><code>{"{cpf}"}</code> - CPF do cliente</li>
+                <li><code>{"{itens}"}</code> - Lista de itens do pedido formatados</li>
+                <li><code>{"{total}"}</code> - Valor total do pedido</li>
+                <li><code>{"{mensagem_fechamento}"}</code> - Mensagem sobre cadastro pendente/realizado</li>
+              </ul>
+            </div>
+          </div>
+          <button type="submit" disabled={whatsappLoading} className="bg-primary-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-primary-700 transition-colors disabled:opacity-50">{whatsappLoading ? 'Salvando...' : 'Salvar Configuração'}</button>
+        </form>
+      </div>
 
       {/* Orders Report */}
       <div className="mt-12">
@@ -634,173 +719,110 @@ ${itemsText}
             <button onClick={openTxtExportModal} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-blue-700 transition-colors text-sm">Exportar TXT (WhatsApp)</button>
           </div>
         </div>
-
-        {/* Order Filters */}
         <div className="p-4 bg-white rounded-lg shadow-sm border border-gray-200 mb-4">
-            <h3 className="text-lg font-semibold text-gray-700 mb-3">Filtrar Pedidos</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                <input
-                    type="text"
-                    placeholder="Buscar por cliente, CPF, email..."
-                    value={orderSearchTerm}
-                    onChange={e => setOrderSearchTerm(e.target.value)}
-                    className={`${baseInputClass} md:col-span-2 lg:col-span-1`}
-                />
-                <select
-                    value={orderFilterStatus}
-                    onChange={e => setOrderFilterStatus(e.target.value as any)}
-                    className={baseInputClass}
-                >
-                    <option value="all">Todos Status Venda</option>
-                    <option value="open">Aberto</option>
-                    <option value="completed">Concluída</option>
-                </select>
-                <select
-                    value={orderFilterCustomerStatus}
-                    onChange={e => setOrderFilterCustomerStatus(e.target.value as any)}
-                    className={baseInputClass}
-                >
-                    <option value="all">Todos Status Cadastro</option>
-                    <option value="pending">Pendente</option>
-                    <option value="registered">Realizado</option>
-                </select>
-                <div className="flex items-center gap-2">
-                    <input 
-                        type="date" 
-                        value={orderStartDate} 
-                        onChange={e => setOrderStartDate(e.target.value)} 
-                        className={baseInputClass}
-                        aria-label="Data de início"
-                    />
-                    <span className="text-gray-600">até</span>
-                    <input 
-                        type="date" 
-                        value={orderEndDate} 
-                        onChange={e => setOrderEndDate(e.target.value)} 
-                        className={baseInputClass}
-                        aria-label="Data de fim"
-                    />
-                </div>
+          <h3 className="text-lg font-semibold text-gray-700 mb-3">Filtrar Pedidos</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <input type="text" placeholder="Buscar por cliente, CPF, email..." value={orderSearchTerm} onChange={e => setOrderSearchTerm(e.target.value)} className={`${baseInputClass} md:col-span-2 lg:col-span-1`} />
+            <select value={orderFilterStatus} onChange={e => setOrderFilterStatus(e.target.value as any)} className={baseInputClass}>
+              <option value="all">Todos Status Venda</option><option value="open">Aberto</option><option value="completed">Concluída</option>
+            </select>
+            <select value={orderFilterCustomerStatus} onChange={e => setOrderFilterCustomerStatus(e.target.value as any)} className={baseInputClass}>
+              <option value="all">Todos Status Cadastro</option><option value="pending">Pendente</option><option value="registered">Realizado</option>
+            </select>
+            <div className="flex items-center gap-2">
+              <input type="date" value={orderStartDate} onChange={e => setOrderStartDate(e.target.value)} className={baseInputClass} aria-label="Data de início" />
+              <span className="text-gray-600">até</span>
+              <input type="date" value={orderEndDate} onChange={e => setOrderEndDate(e.target.value)} className={baseInputClass} aria-label="Data de fim" />
             </div>
+          </div>
         </div>
-
         <div className="bg-white shadow-md rounded-lg overflow-x-auto border border-gray-200">
-           <table className="w-full text-sm text-left text-gray-500">
-                <thead className="text-xs text-gray-700 uppercase bg-gray-50">
-                    <tr>
-                        <th scope="col" className="px-4 py-3">Data</th>
-                        <th scope="col" className="px-4 py-3">Cliente / Contato</th>
-                        <th scope="col" className="px-4 py-3">Prescritor (CPF / Registro)</th>
-                        <th scope="col" className="px-4 py-3">Produtos</th>
-                        <th scope="col" className="px-4 py-3 text-right">Valor Total</th>
-                        <th scope="col" className="px-4 py-3 text-center">Status Cadastro</th>
-                        <th scope="col" className="px-4 py-3 text-center">Status Venda</th>
-                        <th scope="col" className="px-4 py-3">Observação</th>
-                        <th scope="col" className="px-4 py-3 text-center">Ações</th>
+          <table className="w-full text-sm text-left text-gray-500">
+            <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+              <tr>
+                <th scope="col" className="px-4 py-3">Data</th>
+                <th scope="col" className="px-4 py-3">Cliente</th>
+                <th scope="col" className="px-4 py-3">CPF</th>
+                <th scope="col" className="px-4 py-3">Produtos</th>
+                <th scope="col" className="px-4 py-3 text-right">Valor Total</th>
+                <th scope="col" className="px-4 py-3 text-center">Status Cadastro</th>
+                <th scope="col" className="px-4 py-3 text-center">Status Venda</th>
+                <th scope="col" className="px-4 py-3">Atendente</th>
+                <th scope="col" className="px-4 py-3">Observação</th>
+                <th scope="col" className="px-4 py-3 text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {currentOrders.length > 0 ? (
+                currentOrders.map(order => {
+                  const isDuplicate = duplicateOrderIds.has(order.id);
+                  return (
+                    <tr key={order.id} className={`border-b ${isDuplicate ? 'bg-yellow-100 hover:bg-yellow-200 relative duplicate-watermark' : 'bg-white hover:bg-gray-50'}`}>
+                      <td className="px-4 py-4 whitespace-nowrap">{new Date(order.date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                      <td className="px-4 py-4 font-medium text-gray-900 whitespace-nowrap">{order.customer.name}</td>
+                      <td className="px-4 py-4 whitespace-nowrap">{order.customer.cpf}</td>
+                      <td className="px-4 py-4"><ul className="list-disc list-inside">{order.items.map(item => <li key={item.id}>{item.name} ({item.quantity}x)</li>)}</ul></td>
+                      <td className="px-4 py-4 text-right font-medium">{formatCurrency(order.totalPrice)}</td>
+                      <td className="px-4 py-4 text-center">
+                        <select value={order.customerStatus} onChange={e => handleOrderUpdate(order.id, { customerStatus: e.target.value as Order['customerStatus'] })} className="w-full bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-xs focus:ring-1 focus:ring-primary-500 focus:border-primary-500">
+                          <option value="pending">Pendente</option><option value="registered">Realizado</option>
+                        </select>
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <label className="flex items-center justify-center cursor-pointer">
+                          <input type="checkbox" className="form-checkbox h-5 w-5 text-primary-600 rounded border-gray-300 focus:ring-primary-500" checked={order.status === 'completed'} onChange={e => handleOrderUpdate(order.id, { status: e.target.checked ? 'completed' : 'open' })} title={order.status === 'completed' ? 'Marcar como Em Aberto' : 'Marcar como Concluída'} />
+                          <span className={`ml-2 text-xs font-semibold ${order.status === 'completed' ? 'text-green-700' : 'text-yellow-700'}`}>{order.status === 'completed' ? 'Concluída' : 'Aberto'}</span>
+                        </label>
+                      </td>
+                      <td className="px-4 py-4">
+                        <input type="text" value={order.receivedBy || 'Samantha'} onChange={e => handleOrderUpdate(order.id, { receivedBy: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-sm focus:ring-1 focus:ring-primary-500 focus:border-primary-500" placeholder="Samantha" />
+                      </td>
+                      <td className="px-4 py-4">
+                        <input type="text" value={order.observation} onChange={e => handleObservationChange(order.id, e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-sm focus:ring-1 focus:ring-primary-500 focus:border-primary-500" placeholder="Adicionar nota..." />
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <button onClick={() => openDeleteModal(order)} className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 transition-colors" aria-label={`Excluir pedido de ${order.customer.name}`} title="Excluir Pedido"><TrashIcon /></button>
+                      </td>
                     </tr>
-                </thead>
-                <tbody>
-                    {filteredOrders.length > 0 ? (
-                        filteredOrders.map(order => {
-                            const isDuplicate = duplicateOrderIds.has(order.id);
-                        
-                            return (
-                                <tr key={order.id} className={`border-b ${isDuplicate ? 'bg-yellow-100 hover:bg-yellow-200 relative duplicate-watermark' : 'bg-white hover:bg-gray-50'}`}>
-                                    <td className="px-4 py-4 whitespace-nowrap">
-                                        {new Date(order.date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                    </td>
-                                    <td className="px-4 py-4 font-medium text-gray-900 whitespace-nowrap">
-                                        <div>{order.customer.name}</div>
-                                        {order.customer.email && <div className="text-xs text-gray-500 font-normal">{order.customer.email}</div>}
-                                        {order.customer.phone && <div className="text-xs text-primary-700 font-semibold mt-0.5">{order.customer.phone}</div>}
-                                    </td>
-                                    <td className="px-4 py-4 whitespace-nowrap text-xs">
-                                        <div className="font-medium text-gray-800">CPF: {order.customer.cpf}</div>
-                                        {order.customer.profissao && <div className="text-gray-500 font-medium mt-0.5">{order.customer.profissao}</div>}
-                                        {order.customer.registro && <div className="text-primary-800 font-mono font-semibold mt-0.5">{order.customer.registro}</div>}
-                                    </td>
-                                    <td className="px-4 py-4">
-                                      <ul className="list-disc list-inside">
-                                        {order.items.map(item => <li key={item.id}>{item.name} ({item.quantity}x)</li>)}
-                                      </ul>
-                                    </td>
-                                    <td className="px-4 py-4 text-right font-medium">
-                                        {formatCurrency(order.totalPrice)}
-                                    </td>
-                                    <td className="px-4 py-4 text-center">
-                                       <select
-                                            value={order.customerStatus}
-                                            onChange={e => handleOrderUpdate(order.id, { customerStatus: e.target.value as Order['customerStatus'] })}
-                                            className="w-full bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-xs focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
-                                        >
-                                            <option value="pending">Pendente</option>
-                                            <option value="registered">Realizado</option>
-                                        </select>
-                                    </td>
-                                    <td className="px-4 py-4 text-center">
-                                      <label className="flex items-center justify-center cursor-pointer">
-                                        <input
-                                          type="checkbox"
-                                          className="form-checkbox h-5 w-5 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
-                                          checked={order.status === 'completed'}
-                                          onChange={e => handleOrderUpdate(order.id, { status: e.target.checked ? 'completed' : 'open' })}
-                                          title={order.status === 'completed' ? 'Marcar como Em Aberto' : 'Marcar como Concluída'}
-                                        />
-                                        <span className={`ml-2 text-xs font-semibold ${order.status === 'completed' ? 'text-green-700' : 'text-yellow-700'}`}>
-                                          {order.status === 'completed' ? 'Concluída' : 'Aberto'}
-                                        </span>
-                                      </label>
-                                    </td>
-                                    <td className="px-4 py-4">
-                                      <input
-                                        type="text"
-                                        value={order.observation}
-                                        onChange={e => handleObservationChange(order.id, e.target.value)}
-                                        className="w-full bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-sm focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
-                                        placeholder="Adicionar nota..."
-                                      />
-                                    </td>
-                                    <td className="px-4 py-4 text-center">
-                                      <button 
-                                        onClick={() => openDeleteModal(order)}
-                                        className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 transition-colors"
-                                        aria-label={`Excluir pedido de ${order.customer.name}`}
-                                        title="Excluir Pedido"
-                                      >
-                                        <TrashIcon />
-                                      </button>
-                                    </td>
-                                </tr>
-                            )
-                        })
-                    ) : (
-                        <tr>
-                            <td colSpan={9} className="text-center text-gray-500 py-8">
-                                Nenhum pedido encontrado. Tente ajustar seus filtros.
-                            </td>
-                        </tr>
-                    )}
-                </tbody>
-                 {filteredOrders.length > 0 && (
-                    <tfoot className="bg-gray-50 font-semibold">
-                         <tr>
-                            <td colSpan={4} className="px-4 py-3 text-right text-gray-800 uppercase">Total (Filtrado)</td>
-                            <td className="px-4 py-3 text-right text-gray-900">
-                                {formatCurrency(filteredOrders.reduce((acc, order) => acc + order.totalPrice, 0))}
-                            </td>
-                            <td colSpan={4}></td>
-                        </tr>
-                    </tfoot>
-                )}
-            </table>
+                  );
+                })
+              ) : (
+                <tr><td colSpan={10} className="text-center text-gray-500 py-8">Nenhum pedido encontrado. Tente ajustar seus filtros.</td></tr>
+              )}
+            </tbody>
+            {filteredOrders.length > 0 && (
+              <tfoot className="bg-gray-50 font-semibold">
+                <tr>
+                  <td colSpan={4} className="px-4 py-3 text-right text-gray-800 uppercase">Total (Filtrado)</td>
+                  <td className="px-4 py-3 text-right text-gray-900">{formatCurrency(filteredOrders.reduce((acc, order) => acc + order.totalPrice, 0))}</td>
+                  <td colSpan={5}></td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
         </div>
+        {totalPages > 1 && (
+          <div className="flex justify-between items-center mt-4 px-2">
+            <div className="text-sm text-gray-700">Mostrando <span className="font-medium">{indexOfFirstOrder + 1}</span> até <span className="font-medium">{Math.min(indexOfLastOrder, filteredOrders.length)}</span> de <span className="font-medium">{filteredOrders.length}</span> pedidos</div>
+            <div className="flex space-x-2">
+              <button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed">Anterior</button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).filter(p => p === 1 || p === totalPages || (p >= currentPage - 1 && p <= currentPage + 1)).map((number, i, arr) => (
+                <React.Fragment key={number}>
+                  {i > 0 && number > arr[i - 1] + 1 && <span className="px-2 text-gray-500">...</span>}
+                  <button onClick={() => paginate(number)} className={`px-3 py-1 border rounded-md text-sm font-medium ${currentPage === number ? 'bg-primary-600 text-white border-primary-600' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'}`}>{number}</button>
+                </React.Fragment>
+              ))}
+              <button onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages} className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed">Próxima</button>
+            </div>
+          </div>
+        )}
       </div>
-      
+
       {/* Product Form */}
       <div id="product-form" className="bg-white p-6 rounded-lg shadow-md border border-gray-200 scroll-mt-20">
         <h2 className="text-2xl font-bold text-gray-800 mb-4">{isEditing ? 'Editar Produto' : 'Adicionar Novo Produto'}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Nome do Produto</label>
               <input type="text" name="name" id="name" value={formData.name} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.name ? errorInputClass : 'border-gray-300'}`} />
@@ -816,7 +838,7 @@ ${itemsText}
               <input type="number" name="price" id="price" value={formData.price} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.price ? errorInputClass : 'border-gray-300'}`} step="0.01" min="0" />
               {formErrors.price && <p className={errorTextClass}>{formErrors.price}</p>}
             </div>
-             <div>
+            <div>
               <label htmlFor="quantityInfo" className="block text-sm font-medium text-gray-700 mb-1">Informação de Quantidade</label>
               <input type="text" name="quantityInfo" id="quantityInfo" value={formData.quantityInfo || ''} onChange={handleInputChange} className={`${baseInputClass} border-gray-300`} placeholder="Ex: 180 cápsulas" />
             </div>
@@ -825,23 +847,30 @@ ${itemsText}
               <input type="url" name="imageUrl" id="imageUrl" value={formData.imageUrl} onChange={handleInputChange} className={`${baseInputClass} ${formErrors.imageUrl ? errorInputClass : 'border-gray-300'}`} placeholder="https://exemplo.com/imagem.jpg" />
               {formErrors.imageUrl && <p className={errorTextClass}>{formErrors.imageUrl}</p>}
             </div>
-             <div className="md:col-span-2 p-4 bg-primary-50 rounded-lg border border-primary-200 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            <div className="md:col-span-2 p-4 bg-green-50 rounded-lg border border-green-200">
+              <h3 className="font-semibold text-green-800 mb-3 block">Configurações de Promoção</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label htmlFor="promoPrice" className="block text-sm font-medium text-primary-800 mb-1">Preço Promocional (R$)</label>
-                  <input type="number" name="promoPrice" id="promoPrice" value={formData.promoPrice || ''} onChange={handleInputChange} className={`${baseInputClass}`} step="0.01" min="0" placeholder="Deixe 0 para não aplicar" />
+                  <label htmlFor="promoPrice" className="block text-sm font-medium text-green-800 mb-1">Preço Promocional (R$)</label>
+                  <input type="number" name="promoPrice" id="promoPrice" value={formData.promoPrice === 0 ? '' : formData.promoPrice || ''} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white" step="0.01" min="0" placeholder="0.00" />
                 </div>
                 <div>
-                  <label htmlFor="promoEndDate" className="block text-sm font-medium text-primary-800 mb-1">Data de Validade da Promoção</label>
-                  <input type="date" name="promoEndDate" id="promoEndDate" value={formData.promoEndDate || ''} onChange={handleInputChange} className={`${baseInputClass}`} />
+                  <label htmlFor="promoStartDate" className="block text-sm font-medium text-green-800 mb-1">Início da Promoção</label>
+                  <input type="date" name="promoStartDate" id="promoStartDate" value={formData.promoStartDate || ''} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white" />
                 </div>
+                <div>
+                  <label htmlFor="promoEndDate" className="block text-sm font-medium text-green-800 mb-1">Fim da Promoção</label>
+                  <input type="date" name="promoEndDate" id="promoEndDate" value={formData.promoEndDate || ''} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white" />
+                </div>
+              </div>
             </div>
             <div className="md:col-span-2">
-                <label htmlFor="action" className="block text-sm font-medium text-gray-700 mb-1">Ação</label>
-                <textarea name="action" id="action" value={formData.action || ''} onChange={handleInputChange} rows={3} className={`${baseInputClass} border-gray-300`}></textarea>
+              <label htmlFor="action" className="block text-sm font-medium text-gray-700 mb-1">Ação</label>
+              <textarea name="action" id="action" value={formData.action || ''} onChange={handleInputChange} rows={3} className={`${baseInputClass} border-gray-300`}></textarea>
             </div>
             <div className="md:col-span-2">
-                <label htmlFor="indication" className="block text-sm font-medium text-gray-700 mb-1">Indicação</label>
-                <textarea name="indication" id="indication" value={formData.indication || ''} onChange={handleInputChange} rows={3} className={`${baseInputClass} border-gray-300`}></textarea>
+              <label htmlFor="indication" className="block text-sm font-medium text-gray-700 mb-1">Indicação</label>
+              <textarea name="indication" id="indication" value={formData.indication || ''} onChange={handleInputChange} rows={3} className={`${baseInputClass} border-gray-300`}></textarea>
             </div>
             <div className="md:col-span-2">
               <label htmlFor="visibility" className="block text-sm font-medium text-gray-700 mb-1">Visibilidade na Loja</label>
@@ -853,14 +882,8 @@ ${itemsText}
             </div>
           </div>
           <div className="flex items-center space-x-4 pt-2">
-            <button type="submit" className="bg-primary-700 text-white font-bold py-2 px-6 rounded-md hover:bg-primary-800 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
-              {isEditing ? 'Atualizar Produto' : 'Adicionar Produto'}
-            </button>
-            {isEditing && (
-              <button type="button" onClick={resetForm} className="bg-gray-200 text-gray-800 font-bold py-2 px-6 rounded-md hover:bg-gray-300 transition-colors">
-                Cancelar Edição
-              </button>
-            )}
+            <button type="submit" className="bg-primary-700 text-white font-bold py-2 px-6 rounded-md hover:bg-primary-800 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">{isEditing ? 'Atualizar Produto' : 'Adicionar Produto'}</button>
+            {isEditing && (<button type="button" onClick={resetForm} className="bg-gray-200 text-gray-800 font-bold py-2 px-6 rounded-md hover:bg-gray-300 transition-colors">Cancelar Edição</button>)}
           </div>
         </form>
       </div>
@@ -868,158 +891,90 @@ ${itemsText}
       {/* Product List */}
       <div className="mt-12">
         <h2 className="text-2xl font-bold text-gray-800 mb-4">Lista de Produtos</h2>
-        
-        {/* Filters */}
         <div className="p-4 bg-white rounded-lg shadow-sm border border-gray-200 mb-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <input
-              type="text"
-              placeholder="Buscar por nome..."
-              value={productSearchTerm}
-              onChange={e => setProductSearchTerm(e.target.value)}
-              className={baseInputClass}
-            />
-            <select
-              value={productFilterCategory}
-              onChange={e => setProductFilterCategory(e.target.value)}
-              className={baseInputClass}
-            >
-              {productCategories.map(cat => (
-                <option key={cat} value={cat}>{cat === 'all' ? 'Todas as Categorias' : cat}</option>
-              ))}
+            <input type="text" placeholder="Buscar por nome..." value={productSearchTerm} onChange={e => setProductSearchTerm(e.target.value)} className={baseInputClass} />
+            <select value={productFilterCategory} onChange={e => setProductFilterCategory(e.target.value)} className={baseInputClass}>
+              {productCategories.map(cat => (<option key={cat} value={cat}>{cat === 'all' ? 'Todas as Categorias' : cat}</option>))}
             </select>
-            <select
-              value={productFilterVisibility}
-              onChange={e => setProductFilterVisibility(e.target.value as any)}
-              className={baseInputClass}
-            >
-              <option value="all">Toda a Visibilidade</option>
-              <option value="in_stock">Em Estoque</option>
-              <option value="out_of_stock">Esgotado</option>
-              <option value="hidden">Oculto</option>
+            <select value={productFilterVisibility} onChange={e => setProductFilterVisibility(e.target.value as any)} className={baseInputClass}>
+              <option value="all">Toda a Visibilidade</option><option value="in_stock">Em Estoque</option><option value="out_of_stock">Esgotado</option><option value="hidden">Oculto</option>
             </select>
           </div>
         </div>
-
-        {loading ? (
-            <p className="text-gray-500">Carregando produtos...</p>
-        ) : (
-            <div className="bg-white shadow-md rounded-lg overflow-x-auto border border-gray-200">
-              <table className="w-full text-sm text-left text-gray-500">
-                <thead className="text-xs text-gray-700 uppercase bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3">Produto</th>
-                    <th scope="col" className="px-6 py-3">Categoria</th>
-                    <th scope="col" className="px-6 py-3">Visibilidade</th>
-                    <th scope="col" className="px-6 py-3">Preço Padrão</th>
-                    <th scope="col" className="px-6 py-3">Promoção Ativa</th>
-                    <th scope="col" className="px-6 py-3 text-right">Ações</th>
+        {loading ? (<p className="text-gray-500">Carregando produtos...</p>) : (
+          <div className="bg-white shadow-md rounded-lg overflow-x-auto border border-gray-200">
+            <table className="w-full text-sm text-left text-gray-500">
+              <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+                <tr>
+                  <th scope="col" className="px-6 py-3">Produto</th><th scope="col" className="px-6 py-3">Categoria</th>
+                  <th scope="col" className="px-6 py-3">Visibilidade</th><th scope="col" className="px-6 py-3">Preço Padrão</th>
+                  <th scope="col" className="px-6 py-3">Promoção Ativa</th><th scope="col" className="px-6 py-3 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProducts.map(product => (
+                  <tr key={product.id} className="bg-white border-b hover:bg-gray-50">
+                    <th scope="row" className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
+                      <div className="flex items-center space-x-3">
+                        <img src={product.imageUrl} alt={product.name} className={`w-10 h-10 rounded-md object-contain bg-gray-200 ${product.visibility === 'out_of_stock' ? 'opacity-40' : ''}`} />
+                        <div><span className="font-semibold">{product.name}</span>{product.quantityInfo && <p className="text-xs text-gray-500">{product.quantityInfo}</p>}</div>
+                      </div>
+                    </th>
+                    <td className="px-6 py-4">{product.category}</td>
+                    <td className="px-6 py-4">
+                      <select value={product.visibility} onChange={(e) => handleVisibilityChange(product.id, e.target.value as Product['visibility'])} className="w-full bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-xs focus:ring-1 focus:ring-primary-500 focus:border-primary-500">
+                        <option value="in_stock">Em Estoque</option><option value="out_of_stock">Esgotado</option><option value="hidden">Oculto</option>
+                      </select>
+                    </td>
+                    <td className="px-6 py-4 font-medium">{formatCurrency(product.price)}</td>
+                    <td className="px-6 py-4">{isPromoActive(product) && product.promoPrice ? (<div><span className="font-bold text-red-600">{formatCurrency(product.promoPrice)}</span>{product.promoEndDate && <p className="text-xs text-gray-500">Expira: {new Date(product.promoEndDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p>}</div>) : (<span className="text-gray-400">-</span>)}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end items-center space-x-3">
+                        <button onClick={() => setIsEditing(product)} className="text-blue-600 hover:text-blue-800 p-1 rounded-full hover:bg-blue-100 transition-colors" aria-label={`Editar ${product.name}`}><EditIcon /></button>
+                        <button onClick={() => handleDeleteProduct(product.id)} className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 transition-colors" aria-label={`Excluir ${product.name}`}><TrashIcon /></button>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {filteredProducts.map(product => (
-                    <tr key={product.id} className="bg-white border-b hover:bg-gray-50">
-                      <th scope="row" className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
-                        <div className="flex items-center space-x-3">
-                           <img src={product.imageUrl} alt={product.name} className={`w-10 h-10 rounded-md object-contain bg-gray-200 ${product.visibility === 'out_of_stock' ? 'opacity-40' : ''}`} />
-                           <div>
-                            <span className="font-semibold">{product.name}</span>
-                            {product.quantityInfo && <p className="text-xs text-gray-500">{product.quantityInfo}</p>}
-                           </div>
-                        </div>
-                      </th>
-                      <td className="px-6 py-4">{product.category}</td>
-                      <td className="px-6 py-4">
-                        <select
-                          value={product.visibility}
-                          onChange={(e) => handleVisibilityChange(product.id, e.target.value as Product['visibility'])}
-                          className="w-full bg-gray-50 border border-gray-200 rounded-md px-2 py-1 text-xs focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
-                        >
-                            <option value="in_stock">Em Estoque</option>
-                            <option value="out_of_stock">Esgotado</option>
-                            <option value="hidden">Oculto</option>
-                        </select>
-                      </td>
-                      <td className="px-6 py-4 font-medium">{formatCurrency(product.price)}</td>
-                      <td className="px-6 py-4">
-                        {isPromoActive(product) && product.promoPrice ? (
-                          <div>
-                            <span className="font-bold text-red-600">{formatCurrency(product.promoPrice)}</span>
-                            {product.promoEndDate && <p className="text-xs text-gray-500">Expira: {new Date(product.promoEndDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</p>}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex justify-end items-center space-x-3">
-                          <button onClick={() => setIsEditing(product)} className="text-blue-600 hover:text-blue-800 p-1 rounded-full hover:bg-blue-100 transition-colors" aria-label={`Editar ${product.name}`}>
-                            <EditIcon />
-                          </button>
-                          <button onClick={() => handleDeleteProduct(product.id)} className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 transition-colors" aria-label={`Excluir ${product.name}`}>
-                            <TrashIcon />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {filteredProducts.length === 0 && <p className="text-center text-gray-500 py-8">Nenhum produto encontrado com os filtros atuais.</p>}
-            </div>
+                ))}
+              </tbody>
+            </table>
+            {filteredProducts.length === 0 && <p className="text-center text-gray-500 py-8">Nenhum produto encontrado com os filtros atuais.</p>}
+          </div>
         )}
       </div>
 
       {/* Modals */}
-      {isDeleteModalOpen && orderToDelete && ( <div className="fixed inset-0 bg-black bg-opacity-60 z-[70] flex items-center justify-center p-4" aria-modal="true" role="dialog">
+      {isDeleteModalOpen && orderToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-[70] flex items-center justify-center p-4" aria-modal="true" role="dialog">
           <div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 max-w-md w-full text-left transform transition-all relative">
             <h2 className="text-xl font-bold text-gray-900 mb-2">Confirmar Exclusão</h2>
-            <p className="text-gray-600 mb-4">
-              Tem certeza que deseja excluir permanentemente o pedido de <strong>{orderToDelete.customer.name}</strong>? Esta ação não pode ser desfeita.
-            </p>
+            <p className="text-gray-600 mb-4">Tem certeza que deseja excluir permanentemente o pedido de <strong>{orderToDelete.customer.name}</strong>? Esta ação não pode ser desfeita.</p>
             <div className="space-y-4">
-                <div>
-                    <label htmlFor="deletePassword" className="block text-sm font-medium text-gray-700 mb-1">
-                        Para confirmar, digite a senha de administrador:
-                    </label>
-                    <input
-                        type="password"
-                        id="deletePassword"
-                        value={deletePassword}
-                        onChange={(e) => setDeletePassword(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                    />
-                    {deleteError && <p className="text-red-600 text-sm mt-1">{deleteError}</p>}
-                </div>
-                <div className="flex justify-end gap-4">
-                    <button onClick={() => setIsDeleteModalOpen(false)} className="bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-md hover:bg-gray-300">
-                        Cancelar
-                    </button>
-                    <button onClick={handleConfirmDelete} className="bg-red-600 text-white font-bold py-2 px-4 rounded-md hover:bg-red-700">
-                        Excluir Pedido
-                    </button>
-                </div>
+              <div>
+                <label htmlFor="deletePassword" className="block text-sm font-medium text-gray-700 mb-1">Para confirmar, digite a senha de administrador:</label>
+                <input type="password" id="deletePassword" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500" />
+                {deleteError && <p className="text-red-600 text-sm mt-1">{deleteError}</p>}
+              </div>
+              <div className="flex justify-end gap-4">
+                <button onClick={() => setIsDeleteModalOpen(false)} className="bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-md hover:bg-gray-300">Cancelar</button>
+                <button onClick={handleConfirmDelete} className="bg-red-600 text-white font-bold py-2 px-4 rounded-md hover:bg-red-700">Excluir Pedido</button>
+              </div>
             </div>
           </div>
-        </div>)}
-      
+        </div>
+      )}
       {isTxtExportModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-60 z-[70] flex items-center justify-center p-4" aria-modal="true" role="dialog">
           <div className="bg-white rounded-lg shadow-xl p-6 sm:p-8 max-w-2xl w-full text-left transform transition-all relative">
-            <button onClick={() => setIsTxtExportModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600" aria-label="Fechar">
-              <CloseIcon />
-            </button>
+            <button onClick={() => setIsTxtExportModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600" aria-label="Fechar"><CloseIcon /></button>
             <h2 className="text-xl font-bold text-gray-900 mb-4">Exportar para WhatsApp</h2>
             <div className="bg-gray-100 p-4 rounded-md max-h-80 overflow-y-auto border border-gray-200 mb-4">
               <pre className="text-sm text-gray-800 whitespace-pre-wrap">{txtExportContent || 'Nenhum pedido para exportar com os filtros atuais.'}</pre>
             </div>
             <div className="flex justify-end items-center gap-4">
-              <span className={`text-green-600 font-semibold transition-opacity duration-300 ${copySuccess ? 'opacity-100' : 'opacity-0'}`}>
-                {copySuccess}
-              </span>
-              <button onClick={handleCopyTxt} className="bg-primary-700 text-white font-bold py-2 px-6 rounded-md hover:bg-primary-800 transition-colors disabled:bg-gray-400" disabled={!txtExportContent}>
-                Copiar Texto
-              </button>
+              <span className={`text-green-600 font-semibold transition-opacity duration-300 ${copySuccess ? 'opacity-100' : 'opacity-0'}`}>{copySuccess}</span>
+              <button onClick={handleCopyTxt} className="bg-primary-700 text-white font-bold py-2 px-6 rounded-md hover:bg-primary-800 transition-colors disabled:bg-gray-400" disabled={!txtExportContent}>Copiar Texto</button>
             </div>
           </div>
         </div>
